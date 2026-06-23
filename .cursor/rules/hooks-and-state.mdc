@@ -1,0 +1,17 @@
+---
+description: Hooks placement + state management boundaries
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Hooks
+
+- **Reusable hooks** go in `src/shared/hooks`.
+- **Feature hooks** go in `src/features/<feature>/hooks`.
+- Hooks should be **pure** (derive state, orchestrate effects) and return typed, minimal APIs.
+
+# State
+
+- **Global state** belongs in `src/core/store` (or `src/core/contexts` when Context is intentional).
+- **Local state** stays in the owning component/feature.
+- Avoid leaking feature state into `shared/` unless it is truly cross-feature and generic.

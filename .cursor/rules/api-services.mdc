@@ -1,0 +1,15 @@
+---
+description: API client + services conventions (typing, errors, response shapes)
+globs: src/core/api/**/*.ts
+alwaysApply: false
+---
+
+# API & services conventions
+
+- **All requests go through** `@/core/api` (`apiClient`).
+- **Type-safe responses**: `apiClient<MyResponse>(...)` and define `MyResponse` in feature `types/`.
+- **Centralized error handling**:
+  - Throw/propagate `ApiError` from the API layer.
+  - Feature services may map errors to user-friendly messages, but don’t swallow errors silently.
+- **No hard-coded base URLs**: use `@/core/config`.
+- **Keep services slim**: request/response mapping only; heavy transforms go in `features/<x>/utils`.

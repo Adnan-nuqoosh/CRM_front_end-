@@ -1,0 +1,23 @@
+---
+description: Enforce Next.js feature-driven architecture + imports
+alwaysApply: true
+---
+
+# Project architecture (permanent)
+
+- **Folders are permanent**: do not reorganize `src/app`, `src/features`, `src/shared`, `src/core`.
+- **Routing**: only App Router pages/layouts in `src/app/**`.
+- **Domain code**: put feature code in `src/features/<feature>/**` (components/hooks/services/types/utils).
+- **Reusable code**: put cross-feature code in `src/shared/**` (components/hooks/lib/constants/types).
+- **Core infra**: put providers/store/api/config/middleware in `src/core/**`.
+
+# Imports + exports
+
+- **Absolute imports only**: use `@/…` (no `../../..` except inside the same folder when appropriate).
+- **Barrel exports required**: prefer `index.ts` re-exports for clean imports.
+- **Import from barrels** when available (e.g. `@/shared/components`, `@/core/api`).
+
+# Components
+
+- Keep UI components **pure and reusable**; move business logic into hooks/services.
+- Avoid deeply nested JSX; split into smaller components.

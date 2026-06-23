@@ -1,0 +1,22 @@
+---
+description: TypeScript/React standards (strict typing, docs, patterns)
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript & React standards
+
+- **Strict typing**: no `any`; prefer `unknown` + narrowing.
+- **Exported API must be documented**: add TSDoc/JSDoc to every exported function, component, hook, and type.
+- **Naming**:
+  - Components: `PascalCase.tsx`
+  - Hooks: `useX.ts`
+  - Types: `types/*.ts` and export via `types/index.ts`
+- **Props**: prefer `type XProps = { ... }` and keep them small; split big props.
+- **Purity**: keep render functions side-effect free; side effects go in hooks.
+- **Constants**: avoid hard-coded values; centralize in `shared/constants` or feature constants.
+
+# Tailwind styling
+
+- Use Tailwind classes; avoid inline styles except rare overrides.
+- Prefer reusable, theme-aware variants (e.g. `variant` props) over ad-hoc class strings.

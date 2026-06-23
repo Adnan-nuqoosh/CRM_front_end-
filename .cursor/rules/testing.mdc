@@ -1,0 +1,13 @@
+---
+description: Jest + RTL test conventions (colocation, naming, patterns)
+globs: **/*.test.{ts,tsx}
+alwaysApply: false
+---
+
+# Testing conventions
+
+- Use **Jest + React Testing Library**.
+- **Colocate tests** next to the component/hook/service under test.
+- Name tests `X.test.ts` or `X.test.tsx`.
+- Prefer user-centric tests (`getByRole`, `userEvent`) over implementation details.
+- Mock network via service layer boundaries (`features/*/services`) rather than mocking internals of components.

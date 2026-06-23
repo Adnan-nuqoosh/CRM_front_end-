@@ -1,0 +1,257 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import AppShell from "@/components/AppShell";
+import { crmApi, type Company } from "@/lib/crmApi";
+import { getActiveCompanyId } from "@/lib/auth";
+
+/** Small metric card used in the stats row (Companies / Clients / Templates / Documents). */
+function StatCard(props: { label: string; value: string; helper?: string }) {
+  return (
+    <div className="border border-neutral-200 bg-white p-6 shadow-sm">
+      <p className="text-xs font-semibold tracking-wide text-neutral-500">{props.label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-neutral-900">{props.value}</p>
+      {props.helper ? <p className="mt-2 text-xs font-medium text-neutral-500">{props.helper}</p> : null}
+    </div>
+  );
+}
+
+/** Heading row with an optional subtitle and a right-aligned action (e.g. a button). */
+function SectionTitle(props: { title: string; subtitle?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-end justify-between gap-6">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight text-neutral-900">{props.title}</h2>
+        {props.subtitle ? <p className="mt-1 text-sm text-neutral-600">{props.subtitle}</p> : null}
+      </div>
+      {props.action ? <div className="shrink-0">{props.action}</div> : null}
+    </div>
+  );
+}
+
+/** Clickable shortcut card used in the "Getting started" grid. */
+function ActionLink(props: { href: string; title: string; desc: string }) {
+  return (
+    <Link
+      href={props.href}
+      className="block border border-neutral-200 bg-white px-4 py-4 hover:bg-neutral-50 active:bg-neutral-100"
+    >
+      <p className="text-sm font-semibold text-neutral-900">{props.title}</p>
+      <p className="mt-1 text-sm text-neutral-600">{props.desc}</p>
+    </Link>
+  );
+}
+
+export default function DashboardPage() {
+  const [name, setName]             = useState<string | null>(null);
+  const [todayLabel, setTodayLabel] = useState<string>("—");
+
+  const [companies, setCompanies]                   = useState<Company[]>([]);
+  const [activeCompanyId, setActiveCompanyIdState]   = useState<number | null>(null);
+  const [counts, setCounts]                         = useState<{ clients: number; templates: number; documents: number } | null>(null);
+  const [loadError, setLoadError]                   = useState<string | null>(null);
+
+  // Read the cached user name for the greeting. Display-only — AppShell
+  // handles the actual auth check/redirect, so this never blocks rendering.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("nuqoosh.user") ?? window.sessionStorage.getItem("nuqoosh.user");
+      if (!raw) return;
+      const u = JSON.parse(raw) as { name?: string };
+      setName(typeof u.name === "string" ? u.name : null);
+    } catch {
+      // Ignore malformed/missing cached user — greeting just falls back to generic text.
+    }
+  }, []);
+
+  // Format today's date for the header (e.g. "Monday, Jun 22, 2026").
+  useEffect(() => {
+    const d = new Date();
+    const formatted = new Intl.DateTimeFormat(undefined, {
+      weekday: "long",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(d);
+    setTodayLabel(formatted);
+  }, []);
+
+  const activeCompany = useMemo(
+    () => companies.find((c) => c.id === activeCompanyId) ?? null,
+    [activeCompanyId, companies],
+  );
+
+  // Load companies + (if a company is active) the clients/templates/documents counts.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoadError(null);
+      try {
+        const res = await crmApi.companies.list();
+        if (cancelled) return;
+
+        setCompanies(res.companies ?? []);
+        const stored = getActiveCompanyId();
+        setActiveCompanyIdState(stored);
+
+        // Counts require an active company — skip the extra requests if none is set.
+        if (!stored) {
+          setCounts(null);
+          return;
+        }
+
+        const [clients, templates, documents] = await Promise.all([
+          crmApi.clients.list(),
+          crmApi.templates.list(),
+          crmApi.documents.list(),
+        ]);
+        if (cancelled) return;
+
+        setCounts({
+          clients: clients?.length ?? 0,
+          templates: templates?.length ?? 0,
+          documents: documents?.length ?? 0,
+        });
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setCounts(null);
+        setLoadError(
+          e && typeof e === "object" && "message" in e && typeof e.message === "string"
+            ? e.message
+            : "Failed to load dashboard.",
+        );
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <AppShell title="Dashboard" subtitle="Your CRM workspace at a glance.">
+      {loadError ? (
+        <div className="mb-6 border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-neutral-900">{loadError}</div>
+      ) : null}
+
+      {/* ── Welcome banner ── */}
+      <div className="mb-8 border border-neutral-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold tracking-wide text-neutral-500">{todayLabel}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-neutral-900">
+              {name ? `Welcome back, ${name}.` : "Welcome back."}
+            </h2>
+            <p className="mt-2 text-sm text-neutral-600">
+              {activeCompany
+                ? `Active company: ${activeCompany.name}`
+                : "No active company selected yet. Select a company to unlock clients, templates, and documents."}
+            </p>
+          </div>
+
+          <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <Link
+              href="/companies"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0b1f3a] px-5 text-sm font-semibold text-white hover:bg-[#091a31] active:bg-[#071429]"
+            >
+              {activeCompany ? "Change company" : "Select company"}
+            </Link>
+            <Link
+              href="/documents"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0b1f3a] px-5 text-sm font-semibold text-white hover:bg-[#091a31] active:bg-[#071429]"
+            >
+              Generate document
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Stats row ── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Companies" value={String(companies.length)} helper="Workspaces you can access" />
+        <StatCard
+          label="Clients"
+          value={counts ? String(counts.clients) : "—"}
+          helper={activeCompany ? "In active company" : "Select a company"}
+        />
+        <StatCard
+          label="Templates"
+          value={counts ? String(counts.templates) : "—"}
+          helper={activeCompany ? "Ready to generate documents" : "Select a company"}
+        />
+        <StatCard
+          label="Documents"
+          value={counts ? String(counts.documents) : "—"}
+          helper={activeCompany ? "Generated PDFs" : "Select a company"}
+        />
+      </div>
+
+      {/* ── Shortcuts + status ── */}
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="border border-neutral-200 bg-white p-6 shadow-sm">
+          <SectionTitle
+            title="Getting started"
+            subtitle="Use these shortcuts to work faster."
+            action={
+              <Link
+                href="/documents"
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0b1f3a] px-4 text-sm font-semibold text-white hover:bg-[#091a31] active:bg-[#071429]"
+              >
+                Generate PDF
+              </Link>
+            }
+          />
+
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <ActionLink href="/companies" title="Select company" desc="Choose the active company for CRM access." />
+            <ActionLink href="/clients" title="Add client" desc="Create a customer inside the active company." />
+            <ActionLink href="/document-templates" title="Create template" desc="Add reusable templates for documents." />
+            <ActionLink href="/documents" title="Generate document" desc="Pick client + template and download PDF." />
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
+            <SectionTitle title="Active company" subtitle="Current workspace selection." />
+            <div className="mt-5 border border-neutral-200 bg-neutral-50 p-4">
+              <p className="text-xs font-semibold tracking-wide text-neutral-500">STATUS</p>
+              <p className="mt-2 text-sm font-semibold text-neutral-900">
+                {activeCompany ? activeCompany.name : "Not selected"}
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                {activeCompany
+                  ? "You can access clients, templates, and documents."
+                  : "Go to Companies and select a company to unlock CRM modules."}
+              </p>
+            </div>
+          </div>
+
+          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
+            <SectionTitle title="What’s available" subtitle="Modules implemented in this CRM." />
+            <ul className="mt-5 space-y-2 text-sm text-neutral-700">
+              <li className="flex items-start gap-3">
+                <span className="mt-1 h-2 w-2 bg-accent-400" />
+                Companies: list, create (admin), select active company
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-1 h-2 w-2 bg-accent-400" />
+                Clients: list + create (delete route exists but backend controller still needs `destroy()`)
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-1 h-2 w-2 bg-accent-400" />
+                Templates: list + create (admin)
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-1 h-2 w-2 bg-accent-400" />
+                Documents: list + generate + download PDF
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </AppShell>
+  );
+}
