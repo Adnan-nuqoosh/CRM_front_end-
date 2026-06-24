@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type Document, type DocumentTemplate, type Client } from "@/lib/crmApi";
 
+/** Triggers a browser download for a Blob (used for the generated PDF). */
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -16,19 +17,23 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// Badge colors for the Category column. Kept in sync with the colors used
+// on the Templates page (document-templates/page.tsx).
 const CATEGORY_COLORS: Record<string, string> = {
   NDA:      "bg-amber-50 text-amber-700 border border-amber-200",
+  MNDA:     "bg-orange-50 text-orange-700 border border-orange-200",
   Contract: "bg-blue-50 text-blue-700 border border-blue-200",
 };
 
 export default function DocumentsPage() {
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [clients, setClients]     = useState<Client[]>([]);
-  const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [documents, setDocuments]     = useState<Document[]>([]);
+  const [clients, setClients]         = useState<Client[]>([]);
+  const [templates, setTemplates]     = useState<DocumentTemplate[]>([]);
+  const [loading, setLoading]         = useState(true);
   const [downloading, setDownloading] = useState<number | null>(null);
-  const [error, setError]         = useState<string | null>(null);
+  const [error, setError]             = useState<string | null>(null);
 
+  /** Loads documents plus the clients/templates needed to render their names. */
   async function refresh() {
     setError(null);
     setLoading(true);
@@ -48,7 +53,10 @@ export default function DocumentsPage() {
     }
   }
 
-  useEffect(() => { void refresh(); }, []);
+  // Load the document list once on mount.
+  useEffect(() => {
+    void refresh();
+  }, []);
 
   async function onDownload(doc: Document) {
     setDownloading(doc.id);
@@ -111,7 +119,7 @@ export default function DocumentsPage() {
       {/* ── Document list ── */}
       {loading ? (
         <div className="space-y-3">
-          {[1,2,3].map(i => (
+          {[1, 2, 3].map((i) => (
             <div key={i} className="h-20 animate-pulse rounded-xl border border-neutral-200 bg-neutral-100"/>
           ))}
         </div>

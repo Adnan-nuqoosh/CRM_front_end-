@@ -5,14 +5,16 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 export default function RegisterPage() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [name, setName]         = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+
+  const [isPasswordVisible, setIsPasswordVisible]               = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]           = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
     return (
@@ -28,11 +30,13 @@ export default function RegisterPage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canSubmit) return;
+
     setSubmitting(true);
     setError(null);
 
-    // API for registration not provided yet; keep UI ready.
-    // When you share the endpoint/payload, we’ll wire it the same way as login.
+    // NOTE: Registration API is not connected yet — this is UI-only for now.
+    // When the endpoint/payload is shared, wire this up the same way as
+    // the login page (postJson + saveAuth).
     await new Promise((r) => setTimeout(r, 500));
     setSubmitting(false);
     setError("Registration API is not connected yet.");
@@ -41,6 +45,10 @@ export default function RegisterPage() {
   return (
     <main className="min-h-dvh bg-neutral-50 text-neutral-900">
       <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-2">
+
+        {/* ══════════════════════════════════════════
+            LEFT — Branded panel (hidden on small screens)
+        ══════════════════════════════════════════ */}
         <section className="relative hidden lg:block">
           <Image
             src="/nuqoosh-crm-login-image.webp"
@@ -75,6 +83,9 @@ export default function RegisterPage() {
           </div>
         </section>
 
+        {/* ══════════════════════════════════════════
+            RIGHT — Register form
+        ══════════════════════════════════════════ */}
         <section className="flex items-center justify-center p-6 lg:p-12">
           <div className="w-full max-w-md">
             <div className="mb-10">
@@ -182,8 +193,8 @@ export default function RegisterPage() {
             </form>
           </div>
         </section>
+
       </div>
     </main>
   );
 }
-

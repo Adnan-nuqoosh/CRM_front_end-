@@ -8,6 +8,7 @@ import { clearAuth, getUser } from "@/lib/auth";
 
 type NavItem = { href: string; label: string; hint?: string; badge?: number };
 
+// Sidebar navigation. Order here is the order shown in the UI.
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/companies", label: "Companies", hint: "Select workspace" },
@@ -16,10 +17,12 @@ const NAV: NavItem[] = [
   { href: "/documents", label: "Documents", hint: "Generated PDFs" },
 ];
 
+/** Joins class names, skipping any falsy values. */
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+/** Sidebar nav icons — one per NAV item. */
 function Icon(props: { name: "home" | "briefcase" | "users" | "file" | "doc"; className?: string }) {
   const common = "h-5 w-5";
   const cls = cx(common, props.className);
@@ -95,6 +98,7 @@ function Icon(props: { name: "home" | "briefcase" | "users" | "file" | "doc"; cl
   }
 }
 
+/** Top-bar bell/mail icon button with an optional badge count. */
 function TopIcon(props: { kind: "bell" | "mail"; count?: number }) {
   return (
     <button
@@ -138,31 +142,43 @@ function TopIcon(props: { kind: "bell" | "mail"; count?: number }) {
   );
 }
 
+/**
+ * Shared app shell: sidebar nav + top bar + page header, wrapped around
+ * every authenticated page's content (`props.children`).
+ *
+ * Also enforces auth: if no user is found in storage, it redirects to
+ * /login before rendering the page content.
+ */
 export default function AppShell(props: { children: React.ReactNode; title?: string; subtitle?: string }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [name, setName] = useState<string | null>(null);
+
+  const [name, setName]   = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+
+  const [menuOpen, setMenuOpen]                 = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // Restore the sidebar's collapsed/expanded preference from localStorage.
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem("nuqoosh.sidebarCollapsed");
       if (raw === "1") setSidebarCollapsed(true);
     } catch {
-      // ignore
+      // Ignore storage access errors (e.g. private browsing).
     }
   }, []);
 
+  // Persist the sidebar's collapsed/expanded preference whenever it changes.
   useEffect(() => {
     try {
       window.localStorage.setItem("nuqoosh.sidebarCollapsed", sidebarCollapsed ? "1" : "0");
     } catch {
-      // ignore
+      // Ignore storage access errors.
     }
   }, [sidebarCollapsed]);
 
+  // Auth guard: redirect to /login if there's no stored user.
   useEffect(() => {
     const user = getUser();
     if (!user) {
@@ -173,6 +189,8 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
     setEmail(user.email);
   }, [router]);
 
+  // Page header (title/subtitle): use explicit props if given, otherwise
+  // fall back to the matching NAV entry for the current route.
   const header = useMemo(() => {
     if (props.title) return { title: props.title, subtitle: props.subtitle };
     const item = NAV.find((n) => n.href === pathname);
@@ -187,7 +205,11 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
           sidebarCollapsed ? "lg:grid-cols-[88px_1fr]" : "lg:grid-cols-[280px_1fr]",
         )}
       >
+        {/* ══════════════════════════════════════════
+            SIDEBAR
+        ══════════════════════════════════════════ */}
         <aside className="flex h-dvh flex-col overflow-y-auto bg-[#0b1f3a] text-white">
+          {/* Logo */}
           <div className={cx("px-6 py-6", sidebarCollapsed ? "px-3" : "")}>
             <div className={cx("flex items-center", sidebarCollapsed ? "justify-center" : "justify-start")}>
               <Link href="/dashboard" className={cx("block", sidebarCollapsed ? "px-1" : "")}>
@@ -203,12 +225,15 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
             </div>
           </div>
 
+          {/* Nav links */}
           <nav className="flex-1 px-3">
             <div className="space-y-1">
               {NAV.map((item) => {
+                // Highlight "Documents" for both /documents and /documents/generate.
                 const active =
                   pathname === item.href ||
                   (item.href === "/documents" && pathname.startsWith("/documents"));
+
                 const iconName =
                   item.href === "/dashboard"
                     ? ("home" as const)
@@ -247,8 +272,10 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
             </div>
           </nav>
 
+          {/* User / logout footer */}
           <div className={cx("mt-auto border-t border-white/10", sidebarCollapsed ? "px-3 py-4" : "px-6 py-5")}>
             {sidebarCollapsed ? (
+              // Collapsed: just an avatar button that logs out.
               <button
                 type="button"
                 onClick={() => {
@@ -264,6 +291,7 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
                 </div>
               </button>
             ) : (
+              // Expanded: name/email + a separate logout icon button.
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold tracking-wide text-white/60">SIGNED IN</p>
@@ -301,7 +329,7 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
           </div>
         </aside>
 
-        {/* Outside-sidebar collapse control (desktop) */}
+        {/* Floating button (desktop only) that toggles the sidebar collapse state. */}
         <button
           type="button"
           onClick={() => setSidebarCollapsed((v) => !v)}
@@ -333,9 +361,13 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
           </svg>
         </button>
 
+        {/* ══════════════════════════════════════════
+            MAIN COLUMN — top bar + page content
+        ══════════════════════════════════════════ */}
         <div className="min-w-0 overflow-y-auto">
           <header className="sticky top-0 z-40 border-b border-neutral-200/70 bg-[#f4f6fb]">
             <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-5">
+              {/* Search box (UI only — not wired to a search endpoint yet) */}
               <div className="flex min-w-0 flex-1 items-center">
                 <div className="relative w-full max-w-xl">
                   <input
@@ -360,6 +392,7 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
                 </div>
               </div>
 
+              {/* Notifications, messages, and user menu */}
               <div className="flex items-center gap-2">
                 <TopIcon kind="bell" count={12} />
                 <TopIcon kind="mail" count={6} />
@@ -409,16 +442,17 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
               </div>
             </div>
 
+            {/* Page title/subtitle */}
             <div className="mx-auto max-w-6xl px-6 pb-5">
               <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{header.title}</h1>
               {header.subtitle ? <p className="mt-2 text-sm text-neutral-600">{header.subtitle}</p> : null}
             </div>
           </header>
 
+          {/* Page content */}
           <section className="mx-auto max-w-6xl px-6 py-8">{props.children}</section>
         </div>
       </div>
     </main>
   );
 }
-

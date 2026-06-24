@@ -13,12 +13,14 @@ const underlineInputClassName =
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]           = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
     return email.trim().length > 0 && password.length > 0 && !submitting;
@@ -27,6 +29,7 @@ export default function LoginPage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!canSubmit) return;
+
     setSubmitting(true);
     setError(null);
 
@@ -37,7 +40,11 @@ export default function LoginPage() {
       });
 
       saveAuth({ token: res.token, user: res.user, remember });
+
+      // Always start a fresh session with no company selected — the user
+      // picks an active company explicitly on the Companies page.
       setActiveCompanyId(null);
+
       router.replace("/dashboard");
     } catch (err: unknown) {
       if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
@@ -53,12 +60,16 @@ export default function LoginPage() {
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
       <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-[1.15fr_0.85fr]">
-        {/* Left — branded panel */}
+
+        {/* ══════════════════════════════════════════
+            LEFT — Branded panel (hidden on small screens)
+        ══════════════════════════════════════════ */}
         <section className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between">
           <div
             className="absolute inset-0 bg-gradient-to-br from-[#1e40af] via-[#1d4ed8] to-[#172554]"
             aria-hidden
           />
+          {/* Subtle noise texture overlay for depth. */}
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.14] mix-blend-overlay"
             style={{
@@ -66,6 +77,7 @@ export default function LoginPage() {
             }}
             aria-hidden
           />
+          {/* Decorative rings. */}
           <div
             className="pointer-events-none absolute -left-20 top-[18%] h-[380px] w-[380px] rounded-full border border-white/15"
             aria-hidden
@@ -105,7 +117,9 @@ export default function LoginPage() {
           </div>
         </section>
 
-        {/* Right — login form */}
+        {/* ══════════════════════════════════════════
+            RIGHT — Login form
+        ══════════════════════════════════════════ */}
         <section className="flex min-h-dvh flex-col justify-center bg-white px-8 py-12 sm:px-12 lg:px-14 xl:px-20">
           <div className="mx-auto w-full max-w-[420px]">
             <h2 className="text-4xl font-bold tracking-tight text-neutral-900 sm:text-5xl">Log in</h2>
@@ -183,6 +197,7 @@ export default function LoginPage() {
             </form>
           </div>
         </section>
+
       </div>
     </main>
   );
