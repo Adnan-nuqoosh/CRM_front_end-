@@ -63,6 +63,8 @@ export const crmApi = {
       };
     },
 
+    
+
     async create(body: { name: string; email?: string; phone?: string }) {
       return postJson<
         { message: string; data: Company; active_company_id: number | null },
@@ -75,6 +77,16 @@ export const crmApi = {
         { message: string; active_company_id: number },
         { company_id: number }
       >("/api/companies/select", { company_id });
+    },
+  },
+  
+   analytics: {
+    async get(): Promise<{
+      revenue_by_month: { month: string; revenue: number }[];
+      top_clients: { client_name: string; document_count: number; total_amount: number }[];
+      documents_by_month: { month: string; count: number }[];
+    }> {
+      return getJson("/api/analytics");
     },
   },
 

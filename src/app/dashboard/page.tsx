@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type Company } from "@/lib/crmApi";
 import { getActiveCompanyId } from "@/lib/auth";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 /** Small metric card used in the stats row (Companies / Clients / Templates / Documents). */
 function StatCard(props: { label: string; value: string; helper?: string }) {
@@ -43,14 +44,22 @@ function ActionLink(props: { href: string; title: string; desc: string }) {
   );
 }
 
+// Shape of the analytics payload returned by GET /api/analytics.
+type AnalyticsData = {
+  revenue_by_month: { month: string; revenue: number }[];
+  top_clients: { client_name: string; document_count: number; total_amount: number }[];
+  documents_by_month: { month: string; count: number }[];
+};
+
 export default function DashboardPage() {
   const [name, setName]             = useState<string | null>(null);
   const [todayLabel, setTodayLabel] = useState<string>("—");
 
-  const [companies, setCompanies]                   = useState<Company[]>([]);
-  const [activeCompanyId, setActiveCompanyIdState]   = useState<number | null>(null);
-  const [counts, setCounts]                         = useState<{ clients: number; templates: number; documents: number } | null>(null);
-  const [loadError, setLoadError]                   = useState<string | null>(null);
+  const [companies, setCompanies]                 = useState<Company[]>([]);
+  const [activeCompanyId, setActiveCompanyIdState] = useState<number | null>(null);
+  const [counts, setCounts]                       = useState<{ clients: number; templates: number; documents: number } | null>(null);
+  const [analytics, setAnalytics]                 = useState<AnalyticsData | null>(null);
+  const [loadError, setLoadError]                 = useState<string | null>(null);
 
   // Read the cached user name for the greeting. Display-only — AppShell
   // handles the actual auth check/redirect, so this never blocks rendering.
@@ -82,7 +91,7 @@ export default function DashboardPage() {
     [activeCompanyId, companies],
   );
 
-  // Load companies + (if a company is active) the clients/templates/documents counts.
+  // Load companies + (if a company is active) counts and analytics.
   useEffect(() => {
     let cancelled = false;
 
@@ -96,16 +105,18 @@ export default function DashboardPage() {
         const stored = getActiveCompanyId();
         setActiveCompanyIdState(stored);
 
-        // Counts require an active company — skip the extra requests if none is set.
+        // Counts + analytics require an active company — skip if none is set.
         if (!stored) {
           setCounts(null);
+          setAnalytics(null);
           return;
         }
 
-        const [clients, templates, documents] = await Promise.all([
+        const [clients, templates, documents, analyticsData] = await Promise.all([
           crmApi.clients.list(),
           crmApi.templates.list(),
           crmApi.documents.list(),
+          crmApi.analytics.get(),
         ]);
         if (cancelled) return;
 
@@ -114,9 +125,11 @@ export default function DashboardPage() {
           templates: templates?.length ?? 0,
           documents: documents?.length ?? 0,
         });
+        setAnalytics(analyticsData);
       } catch (e: unknown) {
         if (cancelled) return;
         setCounts(null);
+        setAnalytics(null);
         setLoadError(
           e && typeof e === "object" && "message" in e && typeof e.message === "string"
             ? e.message
@@ -130,6 +143,12 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, []);
+
+  // Total revenue across the loaded 6-month window, for the chart card subtitle.
+  const totalRevenue = useMemo(() => {
+    if (!analytics) return 0;
+    return analytics.revenue_by_month.reduce((sum, m) => sum + m.revenue, 0);
+  }, [analytics]);
 
   return (
     <AppShell title="Dashboard" subtitle="Your CRM workspace at a glance.">
@@ -189,6 +208,86 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* ── Analytics charts ── */}
+      {activeCompany && analytics ? (
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+
+          {/* Revenue by month */}
+          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
+            <SectionTitle
+              title="Revenue (last 6 months)"
+              subtitle={`Total: AED ${totalRevenue.toLocaleString()}`}
+            />
+            <div className="mt-5 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={analytics.revenue_by_month}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                  <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                  <Tooltip formatter={(value: number) => [`AED ${value.toLocaleString()}`, "Revenue"]} />
+                  <Line type="monotone" dataKey="revenue" stroke="#0b1f3a" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Documents generated by month */}
+          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
+            <SectionTitle
+              title="Documents generated (last 6 months)"
+              subtitle="Number of contracts/NDAs created per month."
+            />
+            <div className="mt-5 h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analytics.documents_by_month}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#9ca3af" />
+                  <Tooltip formatter={(value: number) => [value, "Documents"]} />
+                  <Bar dataKey="count" fill="#0b1f3a" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Top clients */}
+          <div className="border border-neutral-200 bg-white p-6 shadow-sm lg:col-span-2">
+            <SectionTitle title="Top clients" subtitle="Ranked by number of documents generated." />
+            {analytics.top_clients.length === 0 ? (
+              <p className="mt-5 text-sm text-neutral-500">No documents generated yet for this company.</p>
+            ) : (
+              <div className="mt-5 overflow-hidden border border-neutral-200">
+                <table className="w-full border-separate border-spacing-0">
+                  <thead>
+                    <tr className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                      <th className="border-b border-neutral-200 px-5 py-3">Client</th>
+                      <th className="border-b border-neutral-200 px-5 py-3">Documents</th>
+                      <th className="border-b border-neutral-200 px-5 py-3">Total Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analytics.top_clients.map((c, i) => (
+                      <tr key={c.client_name + i} className="hover:bg-neutral-50">
+                        <td className="border-b border-neutral-100 px-5 py-3.5 text-sm font-semibold text-neutral-900">
+                          {c.client_name}
+                        </td>
+                        <td className="border-b border-neutral-100 px-5 py-3.5 text-sm text-neutral-700">
+                          {c.document_count}
+                        </td>
+                        <td className="border-b border-neutral-100 px-5 py-3.5 text-sm text-neutral-700">
+                          AED {c.total_amount.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      ) : null}
+
       {/* ── Shortcuts + status ── */}
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="border border-neutral-200 bg-white p-6 shadow-sm">
@@ -230,7 +329,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-            <SectionTitle title="What’s available" subtitle="Modules implemented in this CRM." />
+            <SectionTitle title="What's available" subtitle="Modules implemented in this CRM." />
             <ul className="mt-5 space-y-2 text-sm text-neutral-700">
               <li className="flex items-start gap-3">
                 <span className="mt-1 h-2 w-2 bg-accent-400" />
@@ -247,6 +346,10 @@ export default function DashboardPage() {
               <li className="flex items-start gap-3">
                 <span className="mt-1 h-2 w-2 bg-accent-400" />
                 Documents: list + generate + download PDF
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-1 h-2 w-2 bg-accent-400" />
+                Analytics: revenue, document trends, and top clients
               </li>
             </ul>
           </div>
