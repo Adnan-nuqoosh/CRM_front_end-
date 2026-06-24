@@ -224,7 +224,7 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
                   <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                  <Tooltip formatter={(value: number) => [`AED ${value.toLocaleString()}`, "Revenue"]} />
+                  <Tooltip formatter={(value: any) => [`AED ${Number(value).toLocaleString()}`, "Revenue"]} />
                   <Line type="monotone" dataKey="revenue" stroke="#0b1f3a" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -243,7 +243,7 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
                   <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#9ca3af" />
-                  <Tooltip formatter={(value: number) => [value, "Documents"]} />
+                  <Tooltip formatter={(value: any) => [Number(value), "Documents"]} />
                   <Bar dataKey="count" fill="#0b1f3a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
