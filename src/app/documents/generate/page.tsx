@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type DocumentTemplate, type Client } from "@/lib/crmApi";
-import { getActiveCompanyId } from "@/lib/auth";
+import { getActiveCompanyId, hasPermission } from "@/lib/auth";
 
 /** Triggers a browser download for a Blob (used for the generated PDF). */
 function downloadBlob(blob: Blob, filename: string) {
@@ -25,6 +25,15 @@ const inputClass =
 export default function GenerateContractPage() {
   const router = useRouter();
 
+  // ── Permission guard ─────────────────────────────────────────────────────
+  // Redirect immediately if the user can't generate documents. This is a
+  // client-side safety net — the backend route is also protected.
+  useEffect(() => {
+    if (!hasPermission("documents.generate")) {
+      router.replace("/documents");
+    }
+  }, [router]);
+
   // ── Page data ────────────────────────────────────────────────────────────
   const [clients, setClients]       = useState<Client[]>([]);
   const [templates, setTemplates]   = useState<DocumentTemplate[]>([]);
@@ -43,11 +52,8 @@ export default function GenerateContractPage() {
   const [amount, setAmount]               = useState("");
   const [language, setLanguage]           = useState<"en" | "ar">("en");
 
-  // Lower-cased name of the company currently active for this user.
-  // Used to gate company-specific categories (e.g. MNDA is VMC-only).
   const [activeCompanyName, setActiveCompanyName] = useState("");
 
-  // Templates narrowed down to the selected category/sub-category.
   const filteredTemplates = useMemo(() => {
     return templates.filter((t) => {
       if (category && t.category !== category) return false;
@@ -61,7 +67,6 @@ export default function GenerateContractPage() {
     [clientId, templateId, amount, submitting],
   );
 
-  // Load clients + templates once on mount.
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -84,7 +89,6 @@ export default function GenerateContractPage() {
     void load();
   }, []);
 
-  // Auto-select the template if exactly one matches the chosen category/sub-category.
   useEffect(() => {
     if (filteredTemplates.length === 1) {
       setTemplateId(filteredTemplates[0].id);
@@ -93,8 +97,6 @@ export default function GenerateContractPage() {
     }
   }, [filteredTemplates]);
 
-  // Resolve the active company's name once on mount, so we know whether to
-  // show company-specific categories (e.g. MNDA for VMC).
   useEffect(() => {
     async function loadCompanyName() {
       try {
@@ -128,7 +130,6 @@ export default function GenerateContractPage() {
         delivery_date:  deliveryDate,
       });
 
-      // Auto-download the generated PDF.
       if (res.document?.id) {
         const blob = await crmApi.documents.download(res.document.id);
         downloadBlob(blob, `${res.document.contract_number ?? "document_" + res.document.id}.pdf`);
@@ -154,7 +155,6 @@ export default function GenerateContractPage() {
         </div>
       )}
 
-      {/* Back link */}
       <div className="mb-6">
         <Link href="/documents" className="flex w-fit items-center gap-1.5 text-sm font-semibold text-neutral-500 hover:text-[#0b1f3a]">
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -174,13 +174,10 @@ export default function GenerateContractPage() {
         <form onSubmit={onGenerate}>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
 
-            {/* LEFT: Main form */}
             <div className="space-y-5 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
 
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold text-neutral-900">Contract Details</h2>
-
-                {/* Language Toggle */}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -207,7 +204,6 @@ export default function GenerateContractPage() {
                 </div>
               </div>
 
-              {/* Row 1: Client + Category */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Client *</label>
@@ -232,14 +228,12 @@ export default function GenerateContractPage() {
                   >
                     <option value="">Select category…</option>
                     <option value="NDA">NDA</option>
-                    {/* MNDA is only relevant to VMC; hidden for every other company. */}
                     {activeCompanyName === "vmc" && <option value="MNDA">MNDA</option>}
                     <option value="Contract">Contract</option>
                   </select>
                 </div>
               </div>
 
-              {/* Sub Category */}
               {category === "Contract" && (
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Sub Category</label>
@@ -262,7 +256,6 @@ export default function GenerateContractPage() {
                 </div>
               )}
 
-              {/* Template */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Template *</label>
                 {filteredTemplates.length === 0 ? (
@@ -289,7 +282,6 @@ export default function GenerateContractPage() {
                 )}
               </div>
 
-              {/* Client Address */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Client Address</label>
                 <textarea
@@ -301,30 +293,18 @@ export default function GenerateContractPage() {
                 />
               </div>
 
-              {/* Dates */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Contract Date</label>
-                  <input
-                    type="date"
-                    value={contractDate}
-                    onChange={(e) => setContractDate(e.target.value)}
-                    className={inputClass}
-                  />
+                  <input type="date" value={contractDate} onChange={(e) => setContractDate(e.target.value)} className={inputClass}/>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Delivery Date</label>
-                  <input
-                    type="date"
-                    value={deliveryDate}
-                    onChange={(e) => setDeliveryDate(e.target.value)}
-                    className={inputClass}
-                  />
+                  <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)} className={inputClass}/>
                 </div>
               </div>
             </div>
 
-            {/* RIGHT: Summary + Generate */}
             <div className="space-y-4">
               <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
                 <h2 className="text-base font-semibold text-neutral-900">Payment</h2>
@@ -339,15 +319,12 @@ export default function GenerateContractPage() {
                 </div>
               </div>
 
-              {/* Summary card */}
               <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-5">
                 <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Summary</p>
                 <div className="mt-3 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Client</span>
-                    <span className="font-semibold text-neutral-800">
-                      {clients.find((c) => c.id === clientId)?.name ?? "—"}
-                    </span>
+                    <span className="font-semibold text-neutral-800">{clients.find((c) => c.id === clientId)?.name ?? "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Category</span>
@@ -355,9 +332,7 @@ export default function GenerateContractPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Template</span>
-                    <span className="font-semibold text-neutral-800">
-                      {templates.find((t) => t.id === templateId)?.name ?? "—"}
-                    </span>
+                    <span className="font-semibold text-neutral-800">{templates.find((t) => t.id === templateId)?.name ?? "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Amount</span>
@@ -394,9 +369,7 @@ export default function GenerateContractPage() {
                 )}
               </button>
 
-              <p className="text-center text-xs text-neutral-400">
-                PDF will auto-download after generation.
-              </p>
+              <p className="text-center text-xs text-neutral-400">PDF will auto-download after generation.</p>
             </div>
 
           </div>

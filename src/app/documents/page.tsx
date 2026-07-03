@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type Document, type DocumentTemplate, type Client } from "@/lib/crmApi";
+import { hasPermission } from "@/lib/auth";
 
 /** Triggers a browser download for a Blob (used for the generated PDF). */
 function downloadBlob(blob: Blob, filename: string) {
@@ -17,8 +18,6 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-// Badge colors for the Category column. Kept in sync with the colors used
-// on the Templates page (document-templates/page.tsx).
 const CATEGORY_COLORS: Record<string, string> = {
   NDA:      "bg-amber-50 text-amber-700 border border-amber-200",
   MNDA:     "bg-orange-50 text-orange-700 border border-orange-200",
@@ -33,7 +32,13 @@ export default function DocumentsPage() {
   const [downloading, setDownloading] = useState<number | null>(null);
   const [error, setError]             = useState<string | null>(null);
 
-  /** Loads documents plus the clients/templates needed to render their names. */
+  // Permission flags — read once on mount (storage is always ready client-side)
+  const [canGenerate, setCanGenerate] = useState(false);
+
+  useEffect(() => {
+    setCanGenerate(hasPermission("documents.generate"));
+  }, []);
+
   async function refresh() {
     setError(null);
     setLoading(true);
@@ -53,10 +58,7 @@ export default function DocumentsPage() {
     }
   }
 
-  // Load the document list once on mount.
-  useEffect(() => {
-    void refresh();
-  }, []);
+  useEffect(() => { void refresh(); }, []);
 
   async function onDownload(doc: Document) {
     setDownloading(doc.id);
@@ -104,15 +106,19 @@ export default function DocumentsPage() {
             </svg>
             Refresh
           </button>
-          <Link
-            href="/documents/generate"
-            className="flex items-center gap-2 rounded-lg bg-[#0b1f3a] px-5 py-2 text-sm font-semibold text-white hover:bg-[#0d2444]"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Generate Contract
-          </Link>
+
+          {/* Only visible to roles that can generate documents */}
+          {canGenerate && (
+            <Link
+              href="/documents/generate"
+              className="flex items-center gap-2 rounded-lg bg-[#0b1f3a] px-5 py-2 text-sm font-semibold text-white hover:bg-[#0d2444]"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              Generate Contract
+            </Link>
+          )}
         </div>
       </div>
 
@@ -131,12 +137,15 @@ export default function DocumentsPage() {
           </svg>
           <p className="mt-4 text-sm font-semibold text-neutral-500">No documents yet</p>
           <p className="mt-1 text-xs text-neutral-400">Generate your first contract to see it here.</p>
-          <Link
-            href="/documents/generate"
-            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#0b1f3a] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0d2444]"
-          >
-            Generate Contract
-          </Link>
+          {/* Empty state CTA also hidden for non-generators */}
+          {canGenerate && (
+            <Link
+              href="/documents/generate"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#0b1f3a] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0d2444]"
+            >
+              Generate Contract
+            </Link>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">

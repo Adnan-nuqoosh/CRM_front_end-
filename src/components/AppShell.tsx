@@ -4,18 +4,35 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { clearAuth, getUser } from "@/lib/auth";
+import { clearAuth, getUser, getUserRole, hasPermission } from "@/lib/auth";
 
-type NavItem = { href: string; label: string; hint?: string; badge?: number };
+// Added optional `permission` field — if set, the nav item is only shown
+// to users who have that permission. If null/undefined, shown to everyone.
+type NavItem = {
+  href: string;
+  label: string;
+  hint?: string;
+  badge?: number;
+  permission?: string;
+};
 
 // Sidebar navigation. Order here is the order shown in the UI.
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/companies", label: "Companies", hint: "Select workspace" },
-  { href: "/clients", label: "Clients", hint: "Customers" },
-  { href: "/document-templates", label: "Templates", hint: "Documents" },
-  { href: "/documents", label: "Documents", hint: "Generated PDFs" },
+  { href: "/dashboard",           label: "Dashboard"                                        },
+  { href: "/companies",           label: "Companies",  hint: "Select workspace"             },
+  { href: "/clients",             label: "Clients",    hint: "Customers"                    },
+  { href: "/document-templates",  label: "Templates",  hint: "Documents",  permission: "templates.view"  },
+  { href: "/documents",           label: "Documents",  hint: "Generated PDFs", permission: "documents.view" },
 ];
+
+/** Human-readable label for a role slug (e.g. "super-admin" → "Super Admin") */
+function formatRole(role: string | null): string {
+  if (!role) return "User";
+  return role
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 /** Joins class names, skipping any falsy values. */
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -149,15 +166,23 @@ function TopIcon(props: { kind: "bell" | "mail"; count?: number }) {
  * Also enforces auth: if no user is found in storage, it redirects to
  * /login before rendering the page content.
  */
-export default function AppShell(props: { children: React.ReactNode; title?: string; subtitle?: string }) {
-  const router = useRouter();
+export default function AppShell(props: {
+  children: React.ReactNode;
+  title?: string;
+  subtitle?: string;
+}) {
+  const router   = useRouter();
   const pathname = usePathname();
 
-  const [name, setName]   = useState<string | null>(null);
-  const [email, setEmail] = useState<string | null>(null);
+  const [name,     setName]     = useState<string | null>(null);
+  const [email,    setEmail]    = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
-  const [menuOpen, setMenuOpen]                 = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Filtered nav items based on the user's permissions (populated after mount)
+  const [visibleNav, setVisibleNav] = useState<NavItem[]>([]);
+
+  const [menuOpen,          setMenuOpen]          = useState(false);
+  const [sidebarCollapsed,  setSidebarCollapsed]  = useState(false);
 
   // Restore the sidebar's collapsed/expanded preference from localStorage.
   useEffect(() => {
@@ -178,7 +203,7 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
     }
   }, [sidebarCollapsed]);
 
-  // Auth guard: redirect to /login if there's no stored user.
+  // Auth guard + role/permission setup
   useEffect(() => {
     const user = getUser();
     if (!user) {
@@ -187,6 +212,15 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
     }
     setName(user.name);
     setEmail(user.email);
+
+    // Read role and filter nav items based on permissions
+    const role = getUserRole();
+    setUserRole(role);
+
+    const filtered = NAV.filter(
+      (item) => !item.permission || hasPermission(item.permission),
+    );
+    setVisibleNav(filtered);
   }, [router]);
 
   // Page header (title/subtitle): use explicit props if given, otherwise
@@ -225,10 +259,10 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
             </div>
           </div>
 
-          {/* Nav links */}
+          {/* Nav links — only items the user has permission to see */}
           <nav className="flex-1 px-3">
             <div className="space-y-1">
-              {NAV.map((item) => {
+              {visibleNav.map((item) => {
                 // Highlight "Documents" for both /documents and /documents/generate.
                 const active =
                   pathname === item.href ||
@@ -251,15 +285,29 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
                     href={item.href}
                     className={cx(
                       "flex items-center justify-between rounded-xl px-3 py-3 text-sm transition",
-                      active ? "bg-white/10 text-white" : "text-white/75 hover:bg-white/10 hover:text-white",
+                      active
+                        ? "bg-white/10 text-white"
+                        : "text-white/75 hover:bg-white/10 hover:text-white",
                     )}
                     title={sidebarCollapsed ? item.label : undefined}
                   >
                     <span className="flex items-center gap-3">
-                      <span className={cx("grid h-9 w-9 place-items-center rounded-lg", active ? "bg-white/10" : "bg-white/5")}>
-                        <Icon name={iconName} className={active ? "text-white" : "text-white/80"} />
+                      <span
+                        className={cx(
+                          "grid h-9 w-9 place-items-center rounded-lg",
+                          active ? "bg-white/10" : "bg-white/5",
+                        )}
+                      >
+                        <Icon
+                          name={iconName}
+                          className={active ? "text-white" : "text-white/80"}
+                        />
                       </span>
-                      {sidebarCollapsed ? null : <span className={active ? "font-semibold" : "font-medium"}>{item.label}</span>}
+                      {sidebarCollapsed ? null : (
+                        <span className={active ? "font-semibold" : "font-medium"}>
+                          {item.label}
+                        </span>
+                      )}
                     </span>
                     {!sidebarCollapsed && typeof item.badge === "number" ? (
                       <span className="grid h-6 min-w-6 place-items-center rounded-full bg-[#f4c35a] px-2 text-xs font-bold text-[#0b1f3a]">
@@ -273,15 +321,16 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
           </nav>
 
           {/* User / logout footer */}
-          <div className={cx("mt-auto border-t border-white/10", sidebarCollapsed ? "px-3 py-4" : "px-6 py-5")}>
+          <div
+            className={cx(
+              "mt-auto border-t border-white/10",
+              sidebarCollapsed ? "px-3 py-4" : "px-6 py-5",
+            )}
+          >
             {sidebarCollapsed ? (
-              // Collapsed: just an avatar button that logs out.
               <button
                 type="button"
-                onClick={() => {
-                  clearAuth();
-                  router.replace("/login");
-                }}
+                onClick={() => { clearAuth(); router.replace("/login"); }}
                 className="grid w-full place-items-center rounded-xl bg-white/5 py-3 text-white/85 hover:bg-white/10 hover:text-white"
                 title={name ? `${name}${email ? ` — ${email}` : ""}` : "Logout"}
                 aria-label="Logout"
@@ -291,7 +340,6 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
                 </div>
               </button>
             ) : (
-              // Expanded: name/email + a separate logout icon button.
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold tracking-wide text-white/60">SIGNED IN</p>
@@ -300,10 +348,7 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    clearAuth();
-                    router.replace("/login");
-                  }}
+                  onClick={() => { clearAuth(); router.replace("/login"); }}
                   className="grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                   aria-label="Logout"
                   title="Logout"
@@ -410,18 +455,33 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
                     </div>
                     <div className="hidden sm:block">
                       <p className="text-sm font-semibold text-neutral-900">{name ?? "User"}</p>
-                      <p className="text-xs text-neutral-500">Admin</p>
+                      {/* Shows actual role instead of hardcoded "Admin" */}
+                      <p className="text-xs text-neutral-500">{formatRole(userRole)}</p>
                     </div>
-                    <svg className="hidden h-4 w-4 text-neutral-500 sm:block" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <path d="m7 10 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    <svg
+                      className="hidden h-4 w-4 text-neutral-500 sm:block"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="m7 10 5 5 5-5"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
                     </svg>
                   </button>
 
                   {menuOpen ? (
                     <div className="absolute right-0 mt-2 w-48 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg">
                       <div className="px-4 py-3">
-                        <p className="text-xs font-semibold tracking-wide text-neutral-500">CURRENT PAGE</p>
-                        <p className="mt-1 text-sm font-semibold text-neutral-900">{header.title}</p>
+                        <p className="text-xs font-semibold tracking-wide text-neutral-500">
+                          CURRENT PAGE
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-neutral-900">
+                          {header.title}
+                        </p>
                       </div>
                       <div className="border-t border-neutral-200">
                         <button
@@ -444,8 +504,12 @@ export default function AppShell(props: { children: React.ReactNode; title?: str
 
             {/* Page title/subtitle */}
             <div className="mx-auto max-w-6xl px-6 pb-5">
-              <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{header.title}</h1>
-              {header.subtitle ? <p className="mt-2 text-sm text-neutral-600">{header.subtitle}</p> : null}
+              <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">
+                {header.title}
+              </h1>
+              {header.subtitle ? (
+                <p className="mt-2 text-sm text-neutral-600">{header.subtitle}</p>
+              ) : null}
             </div>
           </header>
 

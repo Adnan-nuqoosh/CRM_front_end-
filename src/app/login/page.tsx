@@ -39,7 +39,16 @@ export default function LoginPage() {
         password,
       });
 
-      saveAuth({ token: res.token, user: res.user, remember });
+      // Pass roles + permissions so UI gating works immediately after login
+      // without a separate /me call. Both are now returned by the backend
+      // login endpoint alongside the token.
+      saveAuth({
+        token: res.token,
+        user: res.user,
+        remember,
+        roles: res.roles,
+        permissions: res.permissions,
+      });
 
       // Always start a fresh session with no company selected — the user
       // picks an active company explicitly on the Companies page.

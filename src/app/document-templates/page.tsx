@@ -3,17 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type DocumentTemplate } from "@/lib/crmApi";
-import { getActiveCompanyId } from "@/lib/auth";
+import { getActiveCompanyId, hasPermission } from "@/lib/auth";
 
 // ════════════════════════════════════════════════════════════════════════════
 // STARTER TEMPLATES
-// Pre-filled HTML content that auto-loads into the textarea when a category
-// (and sub-category, where applicable) is selected in the "Create template"
-// form. Keys must match the <option> values in the Category/Sub Category
-// selects further down this file.
 // ════════════════════════════════════════════════════════════════════════════
 const STARTER_TEMPLATES: Record<string, Record<string, string>> = {
-  // ── NDA (Non-Disclosure Agreement) ─────────────────────────────────────
   NDA: {
     default: `<div class="section-title">1. Introduction</div>
 <p>This Non-Disclosure Agreement is entered into on <strong>{{contract_date}}</strong> between <strong>{{company_name}}</strong> ("Disclosing Party") and <strong>{{client_name}}</strong> of <strong>{{client_address}}</strong> ("Receiving Party").</p>
@@ -35,7 +30,6 @@ const STARTER_TEMPLATES: Record<string, Record<string, string>> = {
 <p>This Agreement is governed by applicable laws.</p>`,
   },
 
-  // ── MNDA (Mutual Non-Disclosure Agreement) — VMC only ──────────────────
   MNDA: {
     default: `<p style="text-align:center; font-weight:bold;">MUTUAL NON-DISCLOSURE AGREEMENT (MNDA)</p>
 <p style="text-align:center;">REF. NUMBER: <strong>{{contract_number}}</strong> &nbsp; Date: <strong>{{contract_date}}</strong></p>
@@ -131,7 +125,6 @@ Each Party shall promptly notify the other of any unauthorized disclosure or sus
 <p>IN WITNESS WHEREOF, the Parties have executed this Mutual Non-Disclosure Agreement.</p>`,
   },
 
-  // ── Contract (sub-categories: Website Only / Website + Branding / Branding Only) ──
   Contract: {
     "Website Only": `<div class="section-title">1. Project Overview</div>
 <p>This Agreement is entered into on <strong>{{contract_date}}</strong> between <strong>{{company_name}}</strong> ("Agency") and <strong>{{client_name}}</strong> of <strong>{{client_address}}</strong> ("Client").</p>
@@ -223,7 +216,6 @@ Each Party shall promptly notify the other of any unauthorized disclosure or sus
   },
 };
 
-// ── Variable buttons shown above the content textarea ──────────────────────
 const PLACEHOLDERS = [
   { label: "Client Name",    value: "{{client_name}}" },
   { label: "Company Name",   value: "{{company_name}}" },
@@ -235,7 +227,6 @@ const PLACEHOLDERS = [
   { label: "Delivery Date",  value: "{{delivery_date}}" },
 ];
 
-// ── Badge colors for category / sub-category pills in the template list ───
 const CATEGORY_COLORS: Record<string, string> = {
   NDA:      "bg-amber-50 text-amber-700 border border-amber-200",
   MNDA:     "bg-orange-50 text-orange-700 border border-orange-200",
@@ -248,7 +239,6 @@ const SUB_COLORS: Record<string, string> = {
   "Branding Only":      "bg-pink-50 text-pink-700 border border-pink-200",
 };
 
-/** Small rounded pill used to show category / sub-category on a template card. */
 function Badge({ label, colorClass }: { label: string; colorClass?: string }) {
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${colorClass ?? "bg-neutral-100 text-neutral-600 border border-neutral-200"}`}>
@@ -258,39 +248,45 @@ function Badge({ label, colorClass }: { label: string; colorClass?: string }) {
 }
 
 export default function DocumentTemplatesPage() {
-  // ── Library state (left column) ─────────────────────────────────────────
+  // ── Library state ────────────────────────────────────────────────────────
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading]     = useState(true);
   const [expanded, setExpanded]   = useState<number | null>(null);
   const [error, setError]         = useState<string | null>(null);
 
-  // ── Create-template form state (right column) ──────────────────────────
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess]       = useState(false);
-  const [name, setName]             = useState("");
-  const [type, setType]             = useState("invoice");
-  const [content, setContent]       = useState("");
-  const [category, setCategory]     = useState("");
+  // ── Create-form state ────────────────────────────────────────────────────
+  const [submitting, setSubmitting]   = useState(false);
+  const [success, setSuccess]         = useState(false);
+  const [name, setName]               = useState("");
+  const [type, setType]               = useState("invoice");
+  const [content, setContent]         = useState("");
+  const [category, setCategory]       = useState("");
   const [subCategory, setSubCategory] = useState("");
-
-  // Lower-cased name of the company currently active for this user.
-  // Used to gate company-specific categories (e.g. MNDA is VMC-only).
   const [activeCompanyName, setActiveCompanyName] = useState("");
+
+  // ── Permission flags (read once on mount, storage is ready client-side) ─
+  const [canCreateTemplate, setCanCreateTemplate] = useState(false);
+
+  useEffect(() => {
+    setCanCreateTemplate(hasPermission("templates.create"));
+  }, []);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Form is submittable only when all fields are filled AND user has permission
   const canCreate = useMemo(
-    () => name.trim().length > 1 && type.trim().length > 0 && content.trim().length > 5 && !submitting,
-    [content, name, submitting, type],
+    () =>
+      canCreateTemplate &&
+      name.trim().length > 1 &&
+      type.trim().length > 0 &&
+      content.trim().length > 5 &&
+      !submitting,
+    [canCreateTemplate, content, name, submitting, type],
   );
 
-  /** Loads the starter HTML for a given category/sub-category into the textarea. */
   function loadStarter(cat: string, sub: string) {
     const catMap = STARTER_TEMPLATES[cat];
-    if (!catMap) {
-      setContent("");
-      return;
-    }
+    if (!catMap) { setContent(""); return; }
     setContent(catMap[sub] ?? catMap["default"] ?? "");
   }
 
@@ -305,13 +301,9 @@ export default function DocumentTemplatesPage() {
     loadStarter(category, val);
   }
 
-  /** Inserts a {{placeholder}} at the current cursor position in the textarea. */
   function insertPlaceholder(ph: string) {
     const ta = textareaRef.current;
-    if (!ta) {
-      setContent((c) => c + ph);
-      return;
-    }
+    if (!ta) { setContent((c) => c + ph); return; }
     const start = ta.selectionStart;
     const end   = ta.selectionEnd;
     const next  = content.substring(0, start) + ph + content.substring(end);
@@ -322,7 +314,6 @@ export default function DocumentTemplatesPage() {
     }, 0);
   }
 
-  /** Fetches the template library for the active company. */
   async function refresh() {
     setError(null);
     setLoading(true);
@@ -336,13 +327,8 @@ export default function DocumentTemplatesPage() {
     }
   }
 
-  // Load the template library once on mount.
-  useEffect(() => {
-    void refresh();
-  }, []);
+  useEffect(() => { void refresh(); }, []);
 
-  // Resolve the active company's name once on mount, so we know whether to
-  // show company-specific categories (e.g. MNDA for VMC).
   useEffect(() => {
     async function loadCompanyName() {
       try {
@@ -375,16 +361,9 @@ export default function DocumentTemplatesPage() {
         content,
       });
 
-      // Reset the form after a successful create.
-      setName("");
-      setCategory("");
-      setSubCategory("");
-      setContent("");
-      setType("invoice");
-
+      setName(""); setCategory(""); setSubCategory(""); setContent(""); setType("invoice");
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
-
       await refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create template.");
@@ -396,7 +375,6 @@ export default function DocumentTemplatesPage() {
   return (
     <AppShell title="Templates" subtitle="Manage reusable document templates for the active company.">
 
-      {/* ── Alerts ── */}
       {error && (
         <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" viewBox="0 0 24 24" fill="none">
@@ -414,14 +392,16 @@ export default function DocumentTemplatesPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_400px]">
+      {/*
+        Grid is 2-column when user can create templates (super-admin, admin,
+        office-manager), single column for view-only roles (hr-manager etc.)
+      */}
+      <div className={`grid grid-cols-1 gap-6 ${canCreateTemplate ? "xl:grid-cols-[1fr_400px]" : ""}`}>
 
         {/* ══════════════════════════════════════════
-            LEFT — Template Library
+            LEFT — Template Library (all roles with templates.view)
         ══════════════════════════════════════════ */}
         <div className="space-y-4">
-
-          {/* Header card */}
           <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-6 py-4 shadow-sm">
             <div>
               <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Library</p>
@@ -443,11 +423,10 @@ export default function DocumentTemplatesPage() {
             </button>
           </div>
 
-          {/* Template list */}
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-24 animate-pulse rounded-xl border border-neutral-200 bg-neutral-100" />
+                <div key={i} className="h-24 animate-pulse rounded-xl border border-neutral-200 bg-neutral-100"/>
               ))}
             </div>
           ) : templates.length === 0 ? (
@@ -457,7 +436,11 @@ export default function DocumentTemplatesPage() {
                 <path d="M14 3v4h4M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
               <p className="mt-3 text-sm font-semibold text-neutral-500">No templates yet</p>
-              <p className="mt-1 text-xs text-neutral-400">Create your first template using the form on the right.</p>
+              <p className="mt-1 text-xs text-neutral-400">
+                {canCreateTemplate
+                  ? "Create your first template using the form on the right."
+                  : "No templates have been created for this company yet."}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -473,12 +456,8 @@ export default function DocumentTemplatesPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="text-sm font-semibold text-neutral-900">{t.name}</p>
-                          {t.category && (
-                            <Badge label={t.category} colorClass={CATEGORY_COLORS[t.category]} />
-                          )}
-                          {t.sub_category && (
-                            <Badge label={t.sub_category} colorClass={SUB_COLORS[t.sub_category]} />
-                          )}
+                          {t.category && <Badge label={t.category} colorClass={CATEGORY_COLORS[t.category]}/>}
+                          {t.sub_category && <Badge label={t.sub_category} colorClass={SUB_COLORS[t.sub_category]}/>}
                         </div>
                         <p className="mt-1 text-xs text-neutral-400">Type: {t.type} · ID {t.id}</p>
                       </div>
@@ -509,136 +488,126 @@ export default function DocumentTemplatesPage() {
 
         {/* ══════════════════════════════════════════
             RIGHT — Create Template
+            Only rendered for users with templates.create permission
+            (super-admin, admin, office-manager)
         ══════════════════════════════════════════ */}
-        <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-          {/* Form header */}
-          <div className="border-b border-neutral-100 px-6 py-5">
-            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Admin</p>
-            <h2 className="mt-1 text-base font-semibold text-neutral-900">Create template</h2>
-            <p className="mt-0.5 text-xs text-neutral-500">Category select karo — content auto-load hoga.</p>
-          </div>
-
-          <form onSubmit={onCreate} className="space-y-5 px-6 py-5">
-
-            {/* Category */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Category</label>
-              <select
-                value={category}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-              >
-                <option value="">Select category…</option>
-                <option value="NDA">NDA</option>
-                {/* MNDA is only relevant to VMC; hidden for every other company. */}
-                {activeCompanyName === "vmc" && <option value="MNDA">MNDA</option>}
-                <option value="Contract">Contract</option>
-              </select>
+        {canCreateTemplate && (
+          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
+            <div className="border-b border-neutral-100 px-6 py-5">
+              <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Create</p>
+              <h2 className="mt-1 text-base font-semibold text-neutral-900">Create template</h2>
+              <p className="mt-0.5 text-xs text-neutral-500">Category select karo — content auto-load hoga.</p>
             </div>
 
-            {/* Sub Category — only for Contract */}
-            {category === "Contract" && (
+            <form onSubmit={onCreate} className="space-y-5 px-6 py-5">
+
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Sub Category</label>
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Category</label>
                 <select
-                  value={subCategory}
-                  onChange={(e) => handleSubCategoryChange(e.target.value)}
+                  value={category}
+                  onChange={(e) => handleCategoryChange(e.target.value)}
                   className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
                 >
-                  <option value="">Select sub category…</option>
-                  <option value="Website Only">Website Only</option>
-                  <option value="Website + Branding">Website + Branding</option>
-                  <option value="Branding Only">Branding Only</option>
+                  <option value="">Select category…</option>
+                  <option value="NDA">NDA</option>
+                  {activeCompanyName === "vmc" && <option value="MNDA">MNDA</option>}
+                  <option value="Contract">Contract</option>
                 </select>
               </div>
-            )}
 
-            {/* Name */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Template Name</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Nuqoosh NDA 2026"
-                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-              />
-            </div>
-
-            {/* Type */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Type</label>
-              <input
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                placeholder="invoice"
-                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-              />
-            </div>
-
-            {/* Placeholder inserter */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                Insert Variable
-              </label>
-              <p className="text-[11px] text-neutral-400">Content mein cursor rakh ke koi bhi button dabao.</p>
-              <div className="flex flex-wrap gap-1.5">
-                {PLACEHOLDERS.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => insertPlaceholder(p.value)}
-                    className="rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] font-semibold text-neutral-600 transition hover:border-[#0b1f3a] hover:bg-[#0b1f3a] hover:text-white"
+              {category === "Contract" && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Sub Category</label>
+                  <select
+                    value={subCategory}
+                    onChange={(e) => handleSubCategoryChange(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
                   >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Content (HTML)</label>
-                {content && (
-                  <span className="text-[11px] text-neutral-400">{content.length} chars</span>
-                )}
-              </div>
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={11}
-                placeholder={category ? "Content load ho raha hai…" : "Pehle category select karo…"}
-                className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-neutral-700 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:bg-white focus:ring-1 focus:ring-[#0b1f3a]/10"
-              />
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={!canCreate}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#0b1f3a] text-sm font-semibold text-white transition hover:bg-[#0d2444] active:bg-[#091a31] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
-            >
-              {submitting ? (
-                <>
-                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
-                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                  </svg>
-                  Saving…
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                  Create template
-                </>
+                    <option value="">Select sub category…</option>
+                    <option value="Website Only">Website Only</option>
+                    <option value="Website + Branding">Website + Branding</option>
+                    <option value="Branding Only">Branding Only</option>
+                  </select>
+                </div>
               )}
-            </button>
-          </form>
-        </div>
 
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Template Name</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Nuqoosh NDA 2026"
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Type</label>
+                <input
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                  placeholder="invoice"
+                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Insert Variable</label>
+                <p className="text-[11px] text-neutral-400">Content mein cursor rakh ke koi bhi button dabao.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {PLACEHOLDERS.map((p) => (
+                    <button
+                      key={p.value}
+                      type="button"
+                      onClick={() => insertPlaceholder(p.value)}
+                      className="rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] font-semibold text-neutral-600 transition hover:border-[#0b1f3a] hover:bg-[#0b1f3a] hover:text-white"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Content (HTML)</label>
+                  {content && <span className="text-[11px] text-neutral-400">{content.length} chars</span>}
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  rows={11}
+                  placeholder={category ? "Content load ho raha hai…" : "Pehle category select karo…"}
+                  className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-neutral-700 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:bg-white focus:ring-1 focus:ring-[#0b1f3a]/10"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={!canCreate}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#0b1f3a] text-sm font-semibold text-white transition hover:bg-[#0d2444] active:bg-[#091a31] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
+              >
+                {submitting ? (
+                  <>
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+                    </svg>
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    Create template
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        )}
       </div>
     </AppShell>
   );
