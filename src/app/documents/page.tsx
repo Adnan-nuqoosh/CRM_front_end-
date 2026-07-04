@@ -39,24 +39,47 @@ export default function DocumentsPage() {
     setCanGenerate(hasPermission("documents.generate"));
   }, []);
 
-  async function refresh() {
-    setError(null);
-    setLoading(true);
-    try {
-      const [docs, cls, tpls] = await Promise.all([
-        crmApi.documents.list(),
-        crmApi.clients.list(),
-        crmApi.templates.list(),
-      ]);
-      setDocuments(docs);
-      setClients(cls);
-      setTemplates(tpls);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load documents.");
-    } finally {
-      setLoading(false);
+  
+async function refresh() {
+  setError(null);
+  setLoading(true);
+
+  // Documents load karo — ye zaroori hai, agar ye fail ho to hi real error dikhao
+  try {
+    const docs = await crmApi.documents.list();
+    setDocuments(docs);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "";
+    if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
+      setError("Aapke paas documents dekhne ki permission nahi hai. Apne admin se contact karein.");
+    } else {
+      setError("Documents load nahi ho sake. Dobara try karein.");
     }
+    setLoading(false);
+    return;
   }
+
+  try {
+    const cls = await crmApi.clients.list();
+    setClients(cls);
+  } catch {
+    setClients([]); 
+  }
+
+  try {
+    const tpls = await crmApi.templates.list();
+    setTemplates(tpls);
+  } catch {
+    setTemplates([]); 
+  }
+
+  setLoading(false);
+}
+
+
+
+
+
 
   useEffect(() => { void refresh(); }, []);
 

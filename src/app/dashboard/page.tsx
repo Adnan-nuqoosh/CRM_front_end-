@@ -112,13 +112,22 @@ export default function DashboardPage() {
           return;
         }
 
-        const [clients, templates, documents, analyticsData] = await Promise.all([
+        // Load each resource independently — if the user lacks permission
+        // for one (e.g. HR Manager can't view templates/analytics), that
+        // resource just falls back to an empty/null value instead of
+        // breaking the whole dashboard.
+        const [clientsRes, templatesRes, documentsRes, analyticsRes] = await Promise.allSettled([
           crmApi.clients.list(),
           crmApi.templates.list(),
           crmApi.documents.list(),
           crmApi.analytics.get(),
         ]);
         if (cancelled) return;
+
+        const clients        = clientsRes.status === "fulfilled" ? clientsRes.value : [];
+        const templates       = templatesRes.status === "fulfilled" ? templatesRes.value : [];
+        const documents        = documentsRes.status === "fulfilled" ? documentsRes.value : [];
+        const analyticsData = analyticsRes.status === "fulfilled" ? analyticsRes.value : null;
 
         setCounts({
           clients: clients?.length ?? 0,
