@@ -24,6 +24,7 @@ const NAV: NavItem[] = [
   { href: "/document-templates",  label: "Templates",  hint: "Documents",  permission: "templates.view"  },
   { href: "/documents",           label: "Documents",  hint: "Generated PDFs", permission: "documents.view" },
   { href: "/users",               label: "Users",      hint: "Team & roles",   permission: "users.view"    },
+  { href: "/tasks",               label: "Tasks",      hint: "Assignments",    permission: "tasks.view.own" },
 ];
 
 /** Human-readable label for a role slug (e.g. "super-admin" → "Super Admin") */

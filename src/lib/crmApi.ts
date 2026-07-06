@@ -1,4 +1,4 @@
-import { deleteJson, downloadFile, getJson, postJson, putJson } from "@/lib/api";
+import { deleteJson, downloadFile, getJson, patchJson, postJson, putJson } from "@/lib/api";
 
 export type Company = {
   id: number;
@@ -57,6 +57,28 @@ export type ManagedUser = {
 export type AssignableRole = {
   id: number;
   name: string;
+};
+
+export type Task = {
+  id: number;
+  company_id: number;
+  company_name: string | null;
+  title: string;
+  description: string | null;
+  assigned_to: number | null;
+  assignee_name: string | null;
+  assigned_by: number | null;
+  assigner_name: string | null;
+  status: "pending" | "in_progress" | "completed";
+  due_date: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+};
+
+export type AssignableUser = {
+  id: number;
+  name: string;
+  email: string;
 };
 
 export const crmApi = {
@@ -223,6 +245,52 @@ export const crmApi = {
 
     async delete(id: number) {
       return deleteJson<{ status: string; message: string }>(`/api/users/${id}`);
+    },
+  },
+
+  tasks: {
+    // scope "own" = my tasks (all companies); default = active company (managers)
+    async list(opts?: { scope?: "own"; status?: Task["status"] }): Promise<Task[]> {
+      const params = new URLSearchParams();
+      if (opts?.scope) params.set("scope", opts.scope);
+      if (opts?.status) params.set("status", opts.status);
+      const qs = params.toString();
+      const res = await getJson<{ status: string; data: Task[] }>(
+        `/api/tasks${qs ? `?${qs}` : ""}`,
+      );
+      return res.data ?? [];
+    },
+
+    // Members of a company, for the assignee dropdown (tasks.create gated)
+    async assignableUsers(companyId: number): Promise<AssignableUser[]> {
+      const res = await getJson<{ status: string; data: AssignableUser[] }>(
+        `/api/tasks/assignable-users?company_id=${companyId}`,
+      );
+      return res.data ?? [];
+    },
+
+    async create(body: {
+      title: string;
+      description?: string;
+      company_id: number;
+      assigned_to: number;
+      due_date?: string;
+    }) {
+      return postJson<{ status: string; message: string; data: Task }, typeof body>(
+        "/api/tasks",
+        body,
+      );
+    },
+
+    async updateStatus(id: number, status: Task["status"]) {
+      return patchJson<{ status: string; message: string; data: Task }, { status: string }>(
+        `/api/tasks/${id}/status`,
+        { status },
+      );
+    },
+
+    async delete(id: number) {
+      return deleteJson<{ status: string; message: string }>(`/api/tasks/${id}`);
     },
   },
 };
