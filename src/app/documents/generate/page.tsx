@@ -123,8 +123,7 @@ export default function GenerateContractPage() {
       const res = await crmApi.documents.generate({
         client_id:      clientId,
         template_id:    templateId,
-        price:          amount,
-        amount,
+        amount, // numeric string; backend derives the {{price}} display text
         client_address: clientAddress,
         contract_date:  contractDate,
         delivery_date:  deliveryDate,
@@ -311,9 +310,12 @@ export default function GenerateContractPage() {
                 <div className="mt-4 space-y-1.5">
                   <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Amount *</label>
                   <input
+                    type="number"
+                    min="0"
+                    step="0.01"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder="e.g. AED 5,000"
+                    placeholder="e.g. 5000"
                     className={inputClass}
                   />
                 </div>

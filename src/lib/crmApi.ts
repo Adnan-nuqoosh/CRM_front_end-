@@ -181,12 +181,12 @@ export const crmApi = {
     async generate(body: {
       client_id: number;
       template_id: number;
-      price: string | number;
+      amount: string | number; // numeric — backend validates numeric|min:0
+      price?: string;          // optional display text; derived from amount if absent
       contract_number?: string;
       client_address?: string;
       contract_date?: string;
       delivery_date?: string;
-      amount?: string;
     }) {
       return postJson<
         { message: string; document: Document; download_url: string },
