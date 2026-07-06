@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type Client } from "@/lib/crmApi";
+import { hasPermission } from "@/lib/auth";
 
 export default function ClientsPage() {
   // ── List state ───────────────────────────────────────────────────────────
@@ -19,7 +20,17 @@ export default function ClientsPage() {
   const [phone, setPhone]     = useState("");
   const [address, setAddress] = useState("");
 
-  const canCreate = useMemo(() => name.trim().length > 1 && !submitting, [name, submitting]);
+  // Backend gates POST /api/clients behind documents.generate
+  // (super-admin, admin, office-manager, employee — NOT hr-manager)
+  const [canAddClients, setCanAddClients] = useState(false);
+  useEffect(() => {
+    setCanAddClients(hasPermission("documents.generate"));
+  }, []);
+
+  const canCreate = useMemo(
+    () => canAddClients && name.trim().length > 1 && !submitting,
+    [canAddClients, name, submitting],
+  );
 
   // Client list filtered by the search box (matches name, email, or phone).
   const filtered = clients.filter((c) =>
@@ -99,7 +110,7 @@ export default function ClientsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+      <div className={`grid grid-cols-1 gap-6 ${canAddClients ? "lg:grid-cols-[1fr_360px]" : ""}`}>
 
         {/* ══════════════════════════════════════════
             LEFT — Client List
@@ -186,7 +197,9 @@ export default function ClientsPage() {
 
         {/* ══════════════════════════════════════════
             RIGHT — Add Client
+            Hidden for roles without documents.generate (e.g. hr-manager)
         ══════════════════════════════════════════ */}
+        {canAddClients && (
         <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
           <div className="border-b border-neutral-100 px-6 py-5">
             <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">New Client</p>
@@ -248,6 +261,7 @@ export default function ClientsPage() {
             </button>
           </form>
         </div>
+        )}
 
       </div>
     </AppShell>

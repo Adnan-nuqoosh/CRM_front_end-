@@ -23,14 +23,20 @@ const NAV: NavItem[] = [
   { href: "/clients",             label: "Clients",    hint: "Customers"                    },
   { href: "/document-templates",  label: "Templates",  hint: "Documents",  permission: "templates.view"  },
   { href: "/documents",           label: "Documents",  hint: "Generated PDFs", permission: "documents.view" },
+  { href: "/users",               label: "Users",      hint: "Team & roles",   permission: "users.view"    },
 ];
 
 /** Human-readable label for a role slug (e.g. "super-admin" → "Super Admin") */
 function formatRole(role: string | null): string {
   if (!role) return "User";
+  const UPPERCASE_WORDS = ["hr"]; // "hr-manager" -> "HR Manager", not "Hr Manager"
   return role
     .split("-")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) =>
+      UPPERCASE_WORDS.includes(w.toLowerCase())
+        ? w.toUpperCase()
+        : w.charAt(0).toUpperCase() + w.slice(1),
+    )
     .join(" ");
 }
 
@@ -273,7 +279,7 @@ export default function AppShell(props: {
                     ? ("home" as const)
                     : item.href === "/companies"
                       ? ("briefcase" as const)
-                      : item.href === "/clients"
+                      : item.href === "/clients" || item.href === "/users"
                         ? ("users" as const)
                         : item.href === "/document-templates"
                           ? ("file" as const)
@@ -439,8 +445,8 @@ export default function AppShell(props: {
 
               {/* Notifications, messages, and user menu */}
               <div className="flex items-center gap-2">
-                <TopIcon kind="bell" count={12} />
-                <TopIcon kind="mail" count={6} />
+                <TopIcon kind="bell" />
+                <TopIcon kind="mail" />
 
                 <div className="relative">
                   <button

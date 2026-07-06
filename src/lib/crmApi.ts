@@ -1,4 +1,4 @@
-import { deleteJson, downloadFile, getJson, postJson } from "@/lib/api";
+import { deleteJson, downloadFile, getJson, postJson, putJson } from "@/lib/api";
 
 export type Company = {
   id: number;
@@ -42,6 +42,21 @@ export type Document = {
   contract_number?: string;
   created_at?: string;
   updated_at?: string;
+};
+
+export type ManagedUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: string | null;
+  companies: { id: number; name: string }[];
+  active_company_id: number | null;
+  created_at?: string;
+};
+
+export type AssignableRole = {
+  id: number;
+  name: string;
 };
 
 export const crmApi = {
@@ -159,6 +174,55 @@ export const crmApi = {
 
     async download(id: number): Promise<Blob> {
       return downloadFile(`/api/documents/download/${id}`);
+    },
+  },
+
+  users: {
+    // Backend: { status, data: ManagedUser[] }
+    async list(): Promise<ManagedUser[]> {
+      const res = await getJson<{ status: string; data: ManagedUser[] }>("/api/users");
+      return res.data ?? [];
+    },
+
+    // Roles the current user is allowed to assign (for the role dropdown).
+    async assignableRoles(): Promise<AssignableRole[]> {
+      const res = await getJson<{ status: string; data: AssignableRole[] }>(
+        "/api/users/assignable-roles",
+      );
+      return res.data ?? [];
+    },
+
+    async create(body: {
+      name: string;
+      email: string;
+      password: string;
+      role: string;
+      company_ids: number[];
+    }) {
+      return postJson<
+        { status: string; message: string; data: { id: number; name: string; email: string; role: string } },
+        typeof body
+      >("/api/users", body);
+    },
+
+    async update(
+      id: number,
+      body: {
+        name?: string;
+        email?: string;
+        password?: string;
+        role?: string;
+        company_ids?: number[];
+      },
+    ) {
+      return putJson<{ status: string; message: string }, typeof body>(
+        `/api/users/${id}`,
+        body,
+      );
+    },
+
+    async delete(id: number) {
+      return deleteJson<{ status: string; message: string }>(`/api/users/${id}`);
     },
   },
 };

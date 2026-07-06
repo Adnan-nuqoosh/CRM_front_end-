@@ -28,7 +28,7 @@ export class ApiError extends Error {
 
 async function request<TResponse>(args: {
   path: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
   init?: RequestInit;
 }): Promise<TResponse> {
@@ -88,6 +88,14 @@ export async function postJson<TResponse, TBody extends Record<string, unknown>>
   return request<TResponse>({ path, method: "POST", body, init });
 }
 
+export async function putJson<TResponse, TBody extends Record<string, unknown>>(
+  path: string,
+  body: TBody,
+  init?: RequestInit,
+): Promise<TResponse> {
+  return request<TResponse>({ path, method: "PUT", body, init });
+}
+
 export async function deleteJson<TResponse>(path: string, init?: RequestInit): Promise<TResponse> {
   return request<TResponse>({ path, method: "DELETE", init });
 }
@@ -119,4 +127,3 @@ export async function downloadFile(path: string, init?: RequestInit): Promise<Bl
 
   return res.blob();
 }
-

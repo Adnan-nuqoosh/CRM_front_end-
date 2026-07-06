@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type Company } from "@/lib/crmApi";
-import { getActiveCompanyId, setActiveCompanyId } from "@/lib/auth";
+import { getActiveCompanyId, hasPermission, setActiveCompanyId } from "@/lib/auth";
 
 export default function CompaniesPage() {
   // ── List state ───────────────────────────────────────────────────────────
@@ -19,7 +19,16 @@ export default function CompaniesPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
-  const canCreate = useMemo(() => name.trim().length > 1 && !submitting, [name, submitting]);
+  // Only super-admin can create companies (permission: companies.manage)
+  const [canManageCompanies, setCanManageCompanies] = useState(false);
+  useEffect(() => {
+    setCanManageCompanies(hasPermission("companies.manage"));
+  }, []);
+
+  const canCreate = useMemo(
+    () => canManageCompanies && name.trim().length > 1 && !submitting,
+    [canManageCompanies, name, submitting],
+  );
 
   /** Fetches the user's companies and syncs the active company id. */
   async function refresh() {
@@ -113,7 +122,7 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
+      <div className={`grid grid-cols-1 gap-6 ${canManageCompanies ? "lg:grid-cols-[1fr_400px]" : ""}`}>
 
         {/* ══════════════════════════════════════════
             LEFT — Company List
@@ -200,7 +209,9 @@ export default function CompaniesPage() {
 
         {/* ══════════════════════════════════════════
             RIGHT — Create Company
+            Only rendered for users with companies.manage (super-admin)
         ══════════════════════════════════════════ */}
+        {canManageCompanies && (
         <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
           <div className="border-b border-neutral-100 px-6 py-5">
             <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Admin</p>
@@ -253,6 +264,7 @@ export default function CompaniesPage() {
             </button>
           </form>
         </div>
+        )}
 
       </div>
     </AppShell>
