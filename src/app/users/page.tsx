@@ -368,7 +368,7 @@ export default function UsersPage() {
             <div className="border-b border-neutral-100 px-6 py-5">
               <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">New User</p>
               <h2 className="mt-1 text-base font-semibold text-neutral-900">Create user</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">Role dropdown mein sirf wahi roles hain jo aap assign kar sakte ho.</p>
+              <p className="mt-0.5 text-xs text-neutral-500">The role dropdown only contains the roles you can assign.</p>
             </div>
 
             <form onSubmit={onCreate} className="space-y-4 px-6 py-5">

@@ -69,6 +69,8 @@ export function saveAuth(args: {
 
 /** Clears all auth + active-company data from both storages (used on logout). */
 export function clearAuth() {
+  if (typeof window === "undefined") return;
+
   [window.localStorage, window.sessionStorage].forEach((s) => {
     s.removeItem(TOKEN_KEY);
     s.removeItem(USER_KEY);
@@ -80,6 +82,8 @@ export function clearAuth() {
 
 /** Returns the stored auth token, checking localStorage then sessionStorage. */
 export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+
   return (
     window.localStorage.getItem(TOKEN_KEY) ??
     window.sessionStorage.getItem(TOKEN_KEY)
@@ -88,6 +92,8 @@ export function getToken(): string | null {
 
 /** Returns the stored logged-in user, or null if missing/corrupted. */
 export function getUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+
   const raw =
     window.localStorage.getItem(USER_KEY) ??
     window.sessionStorage.getItem(USER_KEY);
@@ -107,6 +113,8 @@ export function getUser(): AuthUser | null {
  * saveAuth used for the token/user.
  */
 export function setActiveCompanyId(companyId: number | null) {
+  if (typeof window === "undefined") return;
+
   if (companyId === null) {
     window.localStorage.removeItem(ACTIVE_COMPANY_KEY);
     window.sessionStorage.removeItem(ACTIVE_COMPANY_KEY);
@@ -119,6 +127,8 @@ export function setActiveCompanyId(companyId: number | null) {
 
 /** Returns the active company id, or null if none is set/invalid. */
 export function getActiveCompanyId(): number | null {
+  if (typeof window === "undefined") return null;
+
   const raw =
     window.localStorage.getItem(ACTIVE_COMPANY_KEY) ??
     window.sessionStorage.getItem(ACTIVE_COMPANY_KEY);
@@ -146,6 +156,8 @@ export function getActiveCompanyId(): number | null {
  * "hr-manager", "office-manager", "employee"), or null if not set.
  */
 export function getUserRole(): string | null {
+  if (typeof window === "undefined") return null;
+
   return (
     window.localStorage.getItem(ROLE_KEY) ??
     window.sessionStorage.getItem(ROLE_KEY)
@@ -169,6 +181,8 @@ export function hasRole(role: string): boolean {
  * or an empty array if none are stored.
  */
 export function getUserPermissions(): string[] {
+  if (typeof window === "undefined") return [];
+
   const raw =
     window.localStorage.getItem(PERMISSIONS_KEY) ??
     window.sessionStorage.getItem(PERMISSIONS_KEY);

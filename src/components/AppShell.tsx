@@ -181,54 +181,59 @@ export default function AppShell(props: {
   const router   = useRouter();
   const pathname = usePathname();
 
-  const [name,     setName]     = useState<string | null>(null);
-  const [email,    setEmail]    = useState<string | null>(null);
+  // Start empty on the server; hydrate from browser storage after mount.
+  const [name, setName] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
-
-  // Filtered nav items based on the user's permissions (populated after mount)
   const [visibleNav, setVisibleNav] = useState<NavItem[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
-  const [menuOpen,          setMenuOpen]          = useState(false);
-  const [sidebarCollapsed,  setSidebarCollapsed]  = useState(false);
+  // Close overlays during render when the route changes (React-approved pattern).
+  const [overlayPathname, setOverlayPathname] = useState(pathname);
+  if (pathname !== overlayPathname) {
+    setOverlayPathname(pathname);
+    setMobileSidebarOpen(false);
+    setMenuOpen(false);
+  }
 
-  // Restore the sidebar's collapsed/expanded preference from localStorage.
+  // Hydrate auth + sidebar preference from browser storage (client only).
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("nuqoosh.sidebarCollapsed");
-      if (raw === "1") setSidebarCollapsed(true);
-    } catch {
-      // Ignore storage access errors (e.g. private browsing).
-    }
-  }, []);
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        setSidebarCollapsed(window.localStorage.getItem("nuqoosh.sidebarCollapsed") === "1");
+      } catch {
+        // Ignore storage access errors.
+      }
+
+      const user = getUser();
+      if (!user) {
+        setAuthReady(true);
+        router.replace("/login");
+        return;
+      }
+
+      setName(user.name);
+      setEmail(user.email);
+      setUserRole(getUserRole());
+      setVisibleNav(NAV.filter((item) => !item.permission || hasPermission(item.permission)));
+      setAuthReady(true);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [router]);
 
   // Persist the sidebar's collapsed/expanded preference whenever it changes.
   useEffect(() => {
+    if (!authReady) return;
     try {
       window.localStorage.setItem("nuqoosh.sidebarCollapsed", sidebarCollapsed ? "1" : "0");
     } catch {
       // Ignore storage access errors.
     }
-  }, [sidebarCollapsed]);
-
-  // Auth guard + role/permission setup
-  useEffect(() => {
-    const user = getUser();
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    setName(user.name);
-    setEmail(user.email);
-
-    // Read role and filter nav items based on permissions
-    const role = getUserRole();
-    setUserRole(role);
-
-    const filtered = NAV.filter(
-      (item) => !item.permission || hasPermission(item.permission),
-    );
-    setVisibleNav(filtered);
-  }, [router]);
+  }, [sidebarCollapsed, authReady]);
 
   // Page header (title/subtitle): use explicit props if given, otherwise
   // fall back to the matching NAV entry for the current route.
@@ -246,13 +251,29 @@ export default function AppShell(props: {
           sidebarCollapsed ? "lg:grid-cols-[88px_1fr]" : "lg:grid-cols-[280px_1fr]",
         )}
       >
+        {/* Mobile backdrop (closes sidebar on click) */}
+        {mobileSidebarOpen ? (
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          />
+        ) : null}
         {/* ══════════════════════════════════════════
             SIDEBAR
         ══════════════════════════════════════════ */}
-        <aside className="flex h-dvh flex-col overflow-y-auto bg-[#0b1f3a] text-white">
+        <aside
+          className={cx(
+            "z-50 flex h-dvh flex-col overflow-y-auto bg-[#0b1f3a] text-white",
+            // Mobile drawer behavior (<1024px): hidden by default, slide in when opened
+            "fixed inset-y-0 left-0 w-[280px] -translate-x-full transition-transform duration-200 ease-out lg:static lg:w-auto lg:translate-x-0",
+            mobileSidebarOpen ? "translate-x-0" : "",
+          )}
+        >
           {/* Logo */}
           <div className={cx("px-6 py-6", sidebarCollapsed ? "px-3" : "")}>
-            <div className={cx("flex items-center", sidebarCollapsed ? "justify-center" : "justify-start")}>
+            <div className={cx("flex items-center justify-between gap-3", sidebarCollapsed ? "justify-center" : "")}>
               <Link href="/dashboard" className={cx("block", sidebarCollapsed ? "px-1" : "")}>
                 <Image
                   src="/logo/nuqoosh-white logo.png"
@@ -263,6 +284,19 @@ export default function AppShell(props: {
                   priority
                 />
               </Link>
+
+              {/* Mobile close button */}
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen(false)}
+                className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 text-white/90 hover:bg-white/15 lg:hidden"
+                aria-label="Close sidebar"
+                title="Close"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -290,6 +324,7 @@ export default function AppShell(props: {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setMobileSidebarOpen(false)}
                     className={cx(
                       "flex items-center justify-between rounded-xl px-3 py-3 text-sm transition",
                       active
@@ -421,6 +456,17 @@ export default function AppShell(props: {
             <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-5">
               {/* Search box (UI only — not wired to a search endpoint yet) */}
               <div className="flex min-w-0 flex-1 items-center">
+                <button
+                  type="button"
+                  onClick={() => setMobileSidebarOpen(true)}
+                  className="mr-3 grid h-10 w-10 place-items-center rounded-xl border border-neutral-200 bg-white/70 text-neutral-700 hover:bg-white hover:text-neutral-900 active:bg-neutral-100 lg:hidden"
+                  aria-label="Open sidebar"
+                  title="Menu"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </button>
                 <div className="relative w-full max-w-xl">
                   <input
                     placeholder="Search for anything..."
