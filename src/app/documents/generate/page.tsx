@@ -103,7 +103,7 @@ export default function GenerateContractPage() {
         const companyId = getActiveCompanyId();
         const res = await crmApi.companies.list();
         const companies = res.companies ?? [];
-        const active = companies.find((c: any) => c.id === companyId);
+        const active = companies.find((c) => c.id === companyId);
         setActiveCompanyName(active?.name?.toLowerCase() ?? "");
       } catch {
         setActiveCompanyName("");
@@ -127,11 +127,12 @@ export default function GenerateContractPage() {
         client_address: clientAddress,
         contract_date:  contractDate,
         delivery_date:  deliveryDate,
+        language,
       });
 
-      if (res.document?.id) {
-        const blob = await crmApi.documents.download(res.document.id);
-        downloadBlob(blob, `${res.document.contract_number ?? "document_" + res.document.id}.pdf`);
+      if (res.id) {
+        const blob = await crmApi.documents.download(res.id);
+        downloadBlob(blob, `${res.contract_number ?? "document_" + res.id}.pdf`);
       }
 
       router.push("/documents");

@@ -4,9 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { postJson } from "@/lib/api";
+import { type ApiEnvelope, postJson, unwrap } from "@/lib/api";
 import type { LoginResponse } from "@/lib/auth";
-import { saveAuth, setActiveCompanyId } from "@/lib/auth";
+import { saveAuth } from "@/lib/auth";
 
 const underlineInputClassName =
   "w-full border-0 border-b border-neutral-300 bg-transparent py-3 text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-800";
@@ -34,10 +34,12 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const res = await postJson<LoginResponse, { email: string; password: string }>("/api/login", {
+      const response = await postJson<ApiEnvelope<LoginResponse>, { email: string; password: string; device_name: string }>("/api/login", {
         email: email.trim(),
         password,
+        device_name: "Nuqoosh CRM Professional Web",
       });
+      const res = unwrap(response);
 
       // Pass roles + permissions so UI gating works immediately after login
       // without a separate /me call. Both are now returned by the backend
@@ -48,13 +50,10 @@ export default function LoginPage() {
         remember,
         roles: res.roles,
         permissions: res.permissions,
+        activeCompanyId: res.active_company_id,
       });
 
-      // Always start a fresh session with no company selected — the user
-      // picks an active company explicitly on the Companies page.
-      setActiveCompanyId(null);
-
-      router.replace("/dashboard");
+      router.replace(res.active_company_id ? "/dashboard" : "/companies");
     } catch (err: unknown) {
       if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
         setError(err.message);
@@ -116,7 +115,7 @@ export default function LoginPage() {
                 Nuqoosh CRM
               </h1>
               <p className="mt-5 max-w-sm text-sm leading-7 text-white/75">
-                Sign in to access your workspace, manage customers, and keep your team aligned.
+                Sign in to access your workspace, manage clients, automate documents, and keep every team accountable.
               </p>
             </div>
 

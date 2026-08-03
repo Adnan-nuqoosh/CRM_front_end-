@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { clearAuth, getUser, getUserRole, hasPermission } from "@/lib/auth";
+import { crmApi } from "@/lib/crmApi";
 
 // Added optional `permission` field — if set, the nav item is only shown
 // to users who have that permission. If null/undefined, shown to everyone.
@@ -19,12 +20,13 @@ type NavItem = {
 // Sidebar navigation. Order here is the order shown in the UI.
 const NAV: NavItem[] = [
   { href: "/dashboard",           label: "Dashboard"                                        },
-  { href: "/companies",           label: "Companies",  hint: "Select workspace"             },
-  { href: "/clients",             label: "Clients",    hint: "Customers"                    },
+  { href: "/companies",           label: "Companies",  hint: "Select workspace", permission: "companies.view" },
+  { href: "/clients",             label: "Clients",    hint: "Customers", permission: "clients.view" },
   { href: "/document-templates",  label: "Templates",  hint: "Documents",  permission: "templates.view"  },
   { href: "/documents",           label: "Documents",  hint: "Generated PDFs", permission: "documents.view" },
   { href: "/users",               label: "Users",      hint: "Team & roles",   permission: "users.view"    },
   { href: "/tasks",               label: "Tasks",      hint: "Assignments",    permission: "tasks.view.own" },
+  { href: "/activities",          label: "Audit Trail", hint: "Security history", permission: "audit-logs.view" },
 ];
 
 /** Human-readable label for a role slug (e.g. "super-admin" → "Super Admin") */
@@ -47,7 +49,7 @@ function cx(...parts: Array<string | false | null | undefined>) {
 }
 
 /** Sidebar nav icons — one per NAV item. */
-function Icon(props: { name: "home" | "briefcase" | "users" | "file" | "doc"; className?: string }) {
+function Icon(props: { name: "home" | "briefcase" | "users" | "file" | "doc" | "activity"; className?: string }) {
   const common = "h-5 w-5";
   const cls = cx(common, props.className);
   switch (props.name) {
@@ -105,6 +107,13 @@ function Icon(props: { name: "home" | "briefcase" | "users" | "file" | "doc"; cl
             strokeLinejoin="round"
           />
           <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
+    case "activity":
+      return (
+        <svg className={cls} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3 4.5 6v5.5c0 4.6 3.2 7.9 7.5 9.5 4.3-1.6 7.5-4.9 7.5-9.5V6L12 3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+          <path d="M8.5 12h2l1.2-2.5 1.7 5 1.1-2.5h1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       );
     case "doc":
@@ -190,6 +199,14 @@ export default function AppShell(props: {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<{
+    clients: Array<{ id: number; name: string; email?: string | null }>;
+    templates: Array<{ id: number; name: string; category?: string | null }>;
+    documents: Array<{ id: number; contract_number?: string; status?: string }>;
+    tasks: Array<{ id: number; title: string; status?: string }>;
+  } | null>(null);
 
   // Close overlays during render when the route changes (React-approved pattern).
   const [overlayPathname, setOverlayPathname] = useState(pathname);
@@ -225,6 +242,28 @@ export default function AppShell(props: {
     return () => window.cancelAnimationFrame(frame);
   }, [router]);
 
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        setSearchResults(await crmApi.search(query));
+      } catch {
+        setSearchResults(null);
+      } finally {
+        setSearching(false);
+      }
+    }, 280);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
   // Persist the sidebar's collapsed/expanded preference whenever it changes.
   useEffect(() => {
     if (!authReady) return;
@@ -234,6 +273,18 @@ export default function AppShell(props: {
       // Ignore storage access errors.
     }
   }, [sidebarCollapsed, authReady]);
+
+  async function handleLogout() {
+    setMenuOpen(false);
+    try {
+      await crmApi.auth.logout();
+    } catch {
+      // Clear the local session even when the API is temporarily unavailable.
+    } finally {
+      clearAuth();
+      router.replace("/login");
+    }
+  }
 
   // Page header (title/subtitle): use explicit props if given, otherwise
   // fall back to the matching NAV entry for the current route.
@@ -318,7 +369,9 @@ export default function AppShell(props: {
                         ? ("users" as const)
                         : item.href === "/document-templates"
                           ? ("file" as const)
-                          : ("doc" as const);
+                          : item.href === "/activities"
+                            ? ("activity" as const)
+                            : ("doc" as const);
 
                 return (
                   <Link
@@ -372,7 +425,7 @@ export default function AppShell(props: {
             {sidebarCollapsed ? (
               <button
                 type="button"
-                onClick={() => { clearAuth(); router.replace("/login"); }}
+                onClick={() => void handleLogout()}
                 className="grid w-full place-items-center rounded-xl bg-white/5 py-3 text-white/85 hover:bg-white/10 hover:text-white"
                 title={name ? `${name}${email ? ` — ${email}` : ""}` : "Logout"}
                 aria-label="Logout"
@@ -390,7 +443,7 @@ export default function AppShell(props: {
                 </div>
                 <button
                   type="button"
-                  onClick={() => { clearAuth(); router.replace("/login"); }}
+                  onClick={() => void handleLogout()}
                   className="grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
                   aria-label="Logout"
                   title="Logout"
@@ -469,9 +522,34 @@ export default function AppShell(props: {
                 </button>
                 <div className="relative w-full max-w-xl">
                   <input
-                    placeholder="Search for anything..."
-                    className="h-11 w-full rounded-xl border border-neutral-200 bg-white/70 pl-11 pr-4 text-sm text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-brand-500 focus:bg-white"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search clients, templates, documents or tasks"
+                    className="h-11 w-full rounded-xl border border-neutral-200 bg-white/70 pl-11 pr-12 text-sm text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-brand-500 focus:bg-white"
                   />
+                  {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-neutral-400">Searching…</span> : null}
+                  {searchResults && searchQuery.trim().length >= 2 ? (
+                    <div className="absolute left-0 right-0 top-12 z-50 max-h-[420px] overflow-auto rounded-2xl border border-neutral-200 bg-white p-2 shadow-2xl">
+                      {[
+                        { label: "Clients", href: "/clients", items: searchResults.clients, name: (item: { name: string }) => item.name },
+                        { label: "Templates", href: "/document-templates", items: searchResults.templates, name: (item: { name: string }) => item.name },
+                        { label: "Documents", href: "/documents", items: searchResults.documents, name: (item: { contract_number?: string }) => item.contract_number || "Document" },
+                        { label: "Tasks", href: "/tasks", items: searchResults.tasks, name: (item: { title: string }) => item.title },
+                      ].map((group) => group.items.length ? (
+                        <div key={group.label} className="p-2">
+                          <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-400">{group.label}</p>
+                          {group.items.map((item) => (
+                            <Link key={`${group.label}-${item.id}`} href={group.href} onClick={() => { setSearchQuery(""); setSearchResults(null); }} className="block rounded-lg px-2 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100">
+                              {group.name(item as never)}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null)}
+                      {[searchResults.clients, searchResults.templates, searchResults.documents, searchResults.tasks].every((items) => items.length === 0) ? (
+                        <p className="px-4 py-8 text-center text-sm text-neutral-400">No results found.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400">
                     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path
@@ -539,11 +617,7 @@ export default function AppShell(props: {
                       <div className="border-t border-neutral-200">
                         <button
                           type="button"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            clearAuth();
-                            router.replace("/login");
-                          }}
+                          onClick={() => void handleLogout()}
                           className="w-full px-4 py-3 text-left text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
                         >
                           Logout

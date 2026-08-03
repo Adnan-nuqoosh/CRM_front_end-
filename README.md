@@ -1,36 +1,39 @@
-# Sultan Loofah General Trading (Frontend)
+# Nuqoosh CRM Professional V2 — Next.js Frontend
 
-Production-focused Next.js (App Router) codebase with feature-driven architecture, strict TypeScript, Tailwind CSS, and enforced code quality gates.
+Responsive Next.js 16 interface for the Nuqoosh Laravel CRM API.
 
-## Scripts
+## Included screens
 
-- **dev**: `npm run dev`
-- **build**: `npm run build`
-- **lint**: `npm run lint`
-- **format**: `npm run format`
-- **test**: `npm run test`
+- Login
+- Role-aware dashboard and analytics
+- Company selection and company settings
+- Client management
+- Versioned document templates
+- Document generation, approval, archive and download
+- User and role management
+- Tasks
+- Audit Trail
+- Global CRM search
 
-## Architecture (permanent)
+## Setup
 
-- **`src/app`**: App Router routes (`page.tsx`, `layout.tsx`, route segments)
-- **`src/features`**: Domain modules (`<feature>/components|hooks|services|types|utils`)
-- **`src/shared`**: Reusable UI/hooks/lib/constants/types
-- **`src/core`**: Providers, store, API client, config, middleware
+```bash
+cp .env.example .env.local
+npm ci
+npm run dev
+```
 
-## Conventions
+`.env.local`:
 
-- **TypeScript**: `strict: true`, no `any` (use `unknown` + narrowing)
-- **Imports**: absolute imports via `@/` (configured in `tsconfig.json`)
-- **Barrel exports**: prefer importing from `index.ts` re-exports when available
-- **Styling**: Tailwind CSS; avoid inline styles except rare overrides
-- **State**: global state in `src/core/store` (or intentional Context in `src/core/contexts`)
-- **API**: all network calls go through `src/core/api` (`apiClient`) with typed responses and centralized errors
-- **Hooks**: reusable hooks in `src/shared/hooks`, feature hooks in `src/features/<feature>/hooks`
-- **Tests**: Jest + RTL, colocated next to the unit under test (`*.test.tsx`)
-- **Docs**: add JSDoc/TSDoc for every exported function/component/hook/type
+```dotenv
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
 
-## Automated enforcement
+## Production build
 
-- **ESLint + Prettier** are configured for consistent style.
-- **Husky + lint-staged** run on commit to auto-fix lint and formatting issues.
-- **Cursor rules** live in `.cursor/rules/*.mdc` and codify the permanent architecture and patterns for new code.
+```bash
+npm run build
+npm run start
+```
+
+UI permissions improve usability, but the Laravel API remains the final authority for every protected action.
