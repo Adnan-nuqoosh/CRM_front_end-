@@ -9,15 +9,18 @@ export type AuthUser = {
   id: number;
   name: string;
   email: string;
+  is_active?: boolean;
+  active_company_id?: number | null;
 };
 
 export type LoginResponse = {
   token: string;
+  token_type: "Bearer";
   user: AuthUser;
-  // Added: roles array and flat permissions array returned by the backend
-  // on login (and by /me). Used for UI gating via hasPermission() below.
-  roles?: string[];
-  permissions?: string[];
+  roles: string[];
+  permissions: string[];
+  companies: Array<{ id: number; name: string }>;
+  active_company_id: number | null;
 };
 
 const TOKEN_KEY          = "nuqoosh.token";
@@ -40,6 +43,7 @@ export function saveAuth(args: {
   remember: boolean;
   roles?: string[];
   permissions?: string[];
+  activeCompanyId?: number | null;
 }) {
   if (typeof window === "undefined") return;
 
@@ -53,6 +57,7 @@ export function saveAuth(args: {
     s.removeItem(USER_KEY);
     s.removeItem(ROLE_KEY);
     s.removeItem(PERMISSIONS_KEY);
+    s.removeItem(ACTIVE_COMPANY_KEY);
   });
 
   storage.setItem(TOKEN_KEY, args.token);
@@ -64,6 +69,9 @@ export function saveAuth(args: {
   }
   if (args.permissions && args.permissions.length > 0) {
     storage.setItem(PERMISSIONS_KEY, JSON.stringify(args.permissions));
+  }
+  if (typeof args.activeCompanyId === "number") {
+    storage.setItem(ACTIVE_COMPANY_KEY, String(args.activeCompanyId));
   }
 }
 
@@ -121,8 +129,12 @@ export function setActiveCompanyId(companyId: number | null) {
     return;
   }
 
-  window.localStorage.setItem(ACTIVE_COMPANY_KEY, String(companyId));
-  window.sessionStorage.setItem(ACTIVE_COMPANY_KEY, String(companyId));
+  const storage = window.localStorage.getItem(TOKEN_KEY)
+    ? window.localStorage
+    : window.sessionStorage;
+  window.localStorage.removeItem(ACTIVE_COMPANY_KEY);
+  window.sessionStorage.removeItem(ACTIVE_COMPANY_KEY);
+  storage.setItem(ACTIVE_COMPANY_KEY, String(companyId));
 }
 
 /** Returns the active company id, or null if none is set/invalid. */

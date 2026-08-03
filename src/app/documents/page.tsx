@@ -1,257 +1,152 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { crmApi, type Document, type DocumentTemplate, type Client } from "@/lib/crmApi";
+import { crmApi, type Document } from "@/lib/crmApi";
 import { hasPermission } from "@/lib/auth";
 
-/** Triggers a browser download for a Blob (used for the generated PDF). */
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
   URL.revokeObjectURL(url);
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  NDA:      "bg-amber-50 text-amber-700 border border-amber-200",
-  MNDA:     "bg-orange-50 text-orange-700 border border-orange-200",
-  Contract: "bg-blue-50 text-blue-700 border border-blue-200",
-};
-
 export default function DocumentsPage() {
-  const [documents, setDocuments]     = useState<Document[]>([]);
-  const [clients, setClients]         = useState<Client[]>([]);
-  const [templates, setTemplates]     = useState<DocumentTemplate[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [downloading, setDownloading] = useState<number | null>(null);
-  const [error, setError]             = useState<string | null>(null);
-
-  // Permission flags — read once on mount (storage is always ready client-side)
-  const [canGenerate, setCanGenerate] = useState(false);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [workingId, setWorkingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [permissions, setPermissions] = useState({ generate: false, approve: false, archive: false });
 
   useEffect(() => {
-    setCanGenerate(hasPermission("documents.generate"));
+    setPermissions({
+      generate: hasPermission("documents.generate"),
+      approve: hasPermission("documents.approve"),
+      archive: hasPermission("documents.archive"),
+    });
   }, []);
 
-  
-async function refresh() {
-  setError(null);
-  setLoading(true);
-
-  // Documents load karo — ye zaroori hai, agar ye fail ho to hi real error dikhao
-  try {
-    const docs = await crmApi.documents.list();
-    setDocuments(docs);
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "";
-    if (msg.includes("403") || msg.toLowerCase().includes("forbidden")) {
-      setError("Aapke paas documents dekhne ki permission nahi hai. Apne admin se contact karein.");
-    } else {
-      setError("Documents load nahi ho sake. Dobara try karein.");
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      setDocuments(await crmApi.documents.list());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Documents could not be loaded.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-    return;
   }
-
-  try {
-    const cls = await crmApi.clients.list();
-    setClients(cls);
-  } catch {
-    setClients([]); 
-  }
-
-  try {
-    const tpls = await crmApi.templates.list();
-    setTemplates(tpls);
-  } catch {
-    setTemplates([]); 
-  }
-
-  setLoading(false);
-}
-
-
-
-
-
 
   useEffect(() => { void refresh(); }, []);
 
-  async function onDownload(doc: Document) {
-    setDownloading(doc.id);
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return documents.filter((document) => {
+      if (status && document.status !== status) return false;
+      if (!needle) return true;
+      return [document.contract_number, document.client?.name, document.template?.name]
+        .some((value) => (value ?? "").toLowerCase().includes(needle));
+    });
+  }, [documents, search, status]);
+
+  async function run(id: number, action: () => Promise<unknown>, success: string) {
+    setWorkingId(id);
     setError(null);
     try {
-      const blob = await crmApi.documents.download(doc.id);
-      downloadBlob(blob, `${doc.contract_number ?? "document_" + doc.id}.pdf`);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Download failed.");
+      await action();
+      setNotice(success);
+      await refresh();
+      window.setTimeout(() => setNotice(null), 3500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Action failed.");
     } finally {
-      setDownloading(null);
+      setWorkingId(null);
     }
   }
 
+  async function download(document: Document) {
+    setWorkingId(document.id);
+    try {
+      const blob = await crmApi.documents.download(document.id);
+      downloadBlob(blob, `${document.contract_number ?? `document-${document.id}`}.pdf`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed.");
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  const totalValue = documents.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+  const approved = documents.filter((item) => item.status === "approved").length;
+
   return (
-    <AppShell title="Documents" subtitle="Generate and download contract PDFs.">
+    <AppShell title="Documents" subtitle="Generate, approve, download and archive company documents securely.">
+      {(error || notice) && <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm font-semibold ${error ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{error ?? notice}</div>}
 
-      {error && (
-        <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" viewBox="0 0 24 24" fill="none">
-            <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      )}
-
-      {/* ── Top bar ── */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-neutral-200 bg-white px-6 py-4 shadow-sm">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Documents</p>
-          <p className="mt-1 text-sm text-neutral-500">
-            {loading ? "Loading…" : `${documents.length} document${documents.length !== 1 ? "s" : ""} generated`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-          >
-            <svg className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none">
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M21 3v5h-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Refresh
-          </button>
-
-          {/* Only visible to roles that can generate documents */}
-          {canGenerate && (
-            <Link
-              href="/documents/generate"
-              className="flex items-center gap-2 rounded-lg bg-[#0b1f3a] px-5 py-2 text-sm font-semibold text-white hover:bg-[#0d2444]"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              Generate Contract
-            </Link>
-          )}
-        </div>
+      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+        {[
+          ["Total documents", documents.length.toLocaleString(), "All generated records"],
+          ["Approved", approved.toLocaleString(), `${documents.length ? Math.round((approved / documents.length) * 100) : 0}% approval rate`],
+          ["Document value", totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 }), "Active company total"],
+        ].map(([label, value, hint]) => (
+          <div key={label} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_18px_55px_-38px_rgba(15,23,42,.5)]">
+            <p className="text-xs font-bold uppercase tracking-[.15em] text-slate-400">{label}</p>
+            <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{value}</p>
+            <p className="mt-1 text-xs text-slate-400">{hint}</p>
+          </div>
+        ))}
       </div>
 
-      {/* ── Document list ── */}
-      {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 animate-pulse rounded-xl border border-neutral-200 bg-neutral-100"/>
-          ))}
+      <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_22px_60px_-38px_rgba(15,23,42,.55)]">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contract, client or template..." className="h-11 w-full max-w-md rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-blue-500 focus:bg-white" />
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 outline-none"><option value="">All statuses</option><option value="generated">Generated</option><option value="approved">Approved</option></select>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => void refresh()} className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50">Refresh</button>
+            {permissions.generate && <Link href="/documents/generate" className="inline-flex h-11 items-center rounded-xl bg-gradient-to-r from-slate-950 to-blue-800 px-5 text-sm font-bold text-white shadow-lg shadow-blue-900/15">+ Generate document</Link>}
+          </div>
         </div>
-      ) : documents.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed border-neutral-200 bg-white px-6 py-20 text-center">
-          <svg className="mx-auto h-12 w-12 text-neutral-300" viewBox="0 0 24 24" fill="none">
-            <path d="M7 3h7l3 3v15a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-            <path d="M14 3v4h4M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <p className="mt-4 text-sm font-semibold text-neutral-500">No documents yet</p>
-          <p className="mt-1 text-xs text-neutral-400">Generate your first contract to see it here.</p>
-          {/* Empty state CTA also hidden for non-generators */}
-          {canGenerate && (
-            <Link
-              href="/documents/generate"
-              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#0b1f3a] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0d2444]"
-            >
-              Generate Contract
-            </Link>
-          )}
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
-          <table className="w-full border-separate border-spacing-0">
-            <thead>
-              <tr className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                <th className="border-b border-neutral-200 px-5 py-3">Contract No.</th>
-                <th className="border-b border-neutral-200 px-5 py-3">Client</th>
-                <th className="border-b border-neutral-200 px-5 py-3">Template</th>
-                <th className="border-b border-neutral-200 px-5 py-3">Category</th>
-                <th className="border-b border-neutral-200 px-5 py-3">Date</th>
-                <th className="border-b border-neutral-200 px-5 py-3">PDF</th>
-                <th className="border-b border-neutral-200 px-5 py-3"/>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((d) => {
-                const client = clients.find((c) => c.id === d.client_id);
-                const tpl    = templates.find((t) => t.id === d.document_template_id);
-                const isDownloading = downloading === d.id;
-                return (
-                  <tr key={d.id} className="hover:bg-neutral-50">
-                    <td className="border-b border-neutral-100 px-5 py-3.5">
-                      <span className="font-mono text-sm font-semibold text-[#0b1f3a]">
-                        {d.contract_number ?? `#${d.id}`}
-                      </span>
-                    </td>
-                    <td className="border-b border-neutral-100 px-5 py-3.5 text-sm text-neutral-700">
-                      {client?.name ?? `Client #${d.client_id}`}
-                    </td>
-                    <td className="border-b border-neutral-100 px-5 py-3.5 text-sm text-neutral-700">
-                      {tpl?.name ?? `Template #${d.document_template_id}`}
-                    </td>
-                    <td className="border-b border-neutral-100 px-5 py-3.5">
-                      {tpl?.category ? (
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${CATEGORY_COLORS[tpl.category] ?? "bg-neutral-100 text-neutral-600 border border-neutral-200"}`}>
-                          {tpl.category}
-                        </span>
-                      ) : "—"}
-                    </td>
-                    <td className="border-b border-neutral-100 px-5 py-3.5 text-xs text-neutral-400">
-                      {d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="border-b border-neutral-100 px-5 py-3.5">
-                      {d.pdf_path ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                            <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          Ready
-                        </span>
-                      ) : (
-                        <span className="text-xs text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="border-b border-neutral-100 px-5 py-3.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => void onDownload(d)}
-                        disabled={isDownloading || !d.pdf_path}
-                        className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:border-[#0b1f3a] hover:text-[#0b1f3a] disabled:opacity-40"
-                      >
-                        {isDownloading ? (
-                          <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
-                            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                          </svg>
-                        ) : (
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 15V3m0 12-4-4m4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M3 17v2a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                          </svg>
-                        )}
-                        {isDownloading ? "Downloading…" : "Download"}
-                      </button>
-                    </td>
+
+        {loading ? (
+          <div className="space-y-3 p-5">{[1,2,3,4].map((item) => <div key={item} className="h-20 animate-pulse rounded-xl bg-slate-100" />)}</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-6 py-24 text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-slate-100 text-2xl">▤</div><p className="mt-4 font-bold text-slate-700">No documents found</p><p className="mt-1 text-sm text-slate-400">Generate a document or change your filters.</p></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[940px] text-left">
+              <thead className="bg-slate-50 text-[11px] font-bold uppercase tracking-[.14em] text-slate-400"><tr><th className="px-5 py-3">Document</th><th className="px-5 py-3">Client</th><th className="px-5 py-3">Value</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Created</th><th className="px-5 py-3 text-right">Actions</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((document) => (
+                  <tr key={document.id} className="hover:bg-blue-50/35">
+                    <td className="px-5 py-4"><p className="font-bold text-slate-900">{document.contract_number ?? `DOC-${document.id}`}</p><p className="mt-1 text-xs text-slate-400">{document.template?.name ?? "Document template"}</p></td>
+                    <td className="px-5 py-4"><p className="text-sm font-semibold text-slate-700">{document.client?.name ?? `Client #${document.client_id}`}</p><p className="mt-1 text-xs text-slate-400">Created by {document.creator?.name ?? "System"}</p></td>
+                    <td className="px-5 py-4 text-sm font-bold text-slate-800">{Number(document.amount ?? 0).toLocaleString()}</td>
+                    <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${document.status === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>{document.status ?? "generated"}</span></td>
+                    <td className="px-5 py-4 text-sm text-slate-500">{document.created_at ? new Date(document.created_at).toLocaleDateString() : "—"}</td>
+                    <td className="px-5 py-4"><div className="flex justify-end gap-2">
+                      <button disabled={workingId === document.id} onClick={() => void download(document)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-blue-300 hover:text-blue-700 disabled:opacity-40">Download</button>
+                      {permissions.approve && document.status !== "approved" && <button disabled={workingId === document.id} onClick={() => void run(document.id, () => crmApi.documents.approve(document.id), "Document approved successfully.")} className="rounded-lg border border-emerald-200 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50">Approve</button>}
+                      {permissions.archive && <button disabled={workingId === document.id} onClick={() => window.confirm("Archive this document?") && void run(document.id, () => crmApi.documents.archive(document.id), "Document archived successfully.")} className="rounded-lg border border-red-100 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50">Archive</button>}
+                    </div></td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </AppShell>
   );
 }

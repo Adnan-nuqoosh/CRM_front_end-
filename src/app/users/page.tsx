@@ -59,7 +59,8 @@ export default function UsersPage() {
   // ── Permission flags + current user (for self-row protection) ───────────
   const [canCreate, setCanCreate] = useState(false);
   const [canEdit, setCanEdit]     = useState(false);
-  const [canDelete, setCanDelete] = useState(false);
+  const [canDeactivate, setCanDeactivate] = useState(false);
+  const [canReactivate, setCanReactivate] = useState(false);
   const [myId, setMyId]           = useState<number | null>(null);
   const [myRole, setMyRole]       = useState<string | null>(null);
 
@@ -101,7 +102,8 @@ export default function UsersPage() {
   useEffect(() => {
     setCanCreate(hasPermission("users.create"));
     setCanEdit(hasPermission("users.edit"));
-    setCanDelete(hasPermission("users.delete"));
+    setCanDeactivate(hasPermission("users.deactivate"));
+    setCanReactivate(hasPermission("users.reactivate"));
     setMyId(getUser()?.id ?? null);
     setMyRole(getUserRole());
   }, []);
@@ -211,19 +213,31 @@ export default function UsersPage() {
     }
   }
 
-  // ── Delete ────────────────────────────────────────────────────────────────
-  async function onDelete(u: ManagedUser) {
-    if (!window.confirm(`Delete user "${u.name}"? This cannot be undone.`)) return;
-
+  // Users are deactivated instead of permanently deleted so audit history remains intact.
+  async function onDeactivate(u: ManagedUser) {
+    if (!window.confirm(`Deactivate user "${u.name}"? Their active sessions will be revoked.`)) return;
     setDeletingId(u.id);
     setError(null);
-
     try {
-      await crmApi.users.delete(u.id);
-      flashSuccess("User deleted successfully!");
+      await crmApi.users.deactivate(u.id);
+      flashSuccess("User deactivated successfully.");
       await refresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete user.");
+      setError(e instanceof Error ? e.message : "Failed to deactivate user.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function onReactivate(u: ManagedUser) {
+    setDeletingId(u.id);
+    setError(null);
+    try {
+      await crmApi.users.reactivate(u.id);
+      flashSuccess("User reactivated successfully.");
+      await refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to reactivate user.");
     } finally {
       setDeletingId(null);
     }
@@ -310,7 +324,12 @@ export default function UsersPage() {
                                 {u.name}
                                 {isSelf && <span className="ml-2 text-xs font-normal text-neutral-400">(you)</span>}
                               </p>
-                              <p className="truncate text-xs text-neutral-400">{u.email}</p>
+                              <div className="mt-0.5 flex items-center gap-2">
+                                <p className="truncate text-xs text-neutral-400">{u.email}</p>
+                                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${u.is_active === false ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
+                                  {u.is_active === false ? "Inactive" : "Active"}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -339,16 +358,25 @@ export default function UsersPage() {
                                 Edit
                               </button>
                             )}
-                            {canDelete && manageable && (
+                            {u.is_active === false && canReactivate && manageable ? (
                               <button
                                 type="button"
-                                onClick={() => void onDelete(u)}
+                                onClick={() => void onReactivate(u)}
+                                disabled={deletingId === u.id}
+                                className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
+                              >
+                                {deletingId === u.id ? "Working…" : "Reactivate"}
+                              </button>
+                            ) : canDeactivate && manageable ? (
+                              <button
+                                type="button"
+                                onClick={() => void onDeactivate(u)}
                                 disabled={deletingId === u.id}
                                 className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40"
                               >
-                                {deletingId === u.id ? "Deleting…" : "Delete"}
+                                {deletingId === u.id ? "Working…" : "Deactivate"}
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </td>
                       </tr>

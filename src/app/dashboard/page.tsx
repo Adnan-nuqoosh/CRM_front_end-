@@ -5,7 +5,17 @@ import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { crmApi, type Company } from "@/lib/crmApi";
 import { getActiveCompanyId } from "@/lib/auth";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 /** Small metric card used in the stats row (Companies / Clients / Templates / Documents). */
 function StatCard(props: { label: string; value: string; helper?: string }) {
@@ -61,29 +71,34 @@ export default function DashboardPage() {
   const [analytics, setAnalytics]                 = useState<AnalyticsData | null>(null);
   const [loadError, setLoadError]                 = useState<string | null>(null);
 
-  // Read the cached user name for the greeting. Display-only — AppShell
-  // handles the actual auth check/redirect, so this never blocks rendering.
+  // Load browser-only display data after mount. The timeout keeps these
+  // state updates out of the synchronous effect body and avoids cascading renders.
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("nuqoosh.user") ?? window.sessionStorage.getItem("nuqoosh.user");
-      if (!raw) return;
-      const u = JSON.parse(raw) as { name?: string };
-      setName(typeof u.name === "string" ? u.name : null);
-    } catch {
-      // Ignore malformed/missing cached user — greeting just falls back to generic text.
-    }
-  }, []);
+    const timer = window.setTimeout(() => {
+      try {
+        const raw =
+          window.localStorage.getItem("nuqoosh.user") ??
+          window.sessionStorage.getItem("nuqoosh.user");
 
-  // Format today's date for the header (e.g. "Monday, Jun 22, 2026").
-  useEffect(() => {
-    const d = new Date();
-    const formatted = new Intl.DateTimeFormat(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(d);
-    setTodayLabel(formatted);
+        if (raw) {
+          const user = JSON.parse(raw) as { name?: string };
+          setName(typeof user.name === "string" ? user.name : null);
+        }
+      } catch {
+        setName(null);
+      }
+
+      const formattedDate = new Intl.DateTimeFormat(undefined, {
+        weekday: "long",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }).format(new Date());
+
+      setTodayLabel(formattedDate);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   const activeCompany = useMemo(
@@ -233,7 +248,7 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
                   <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                  <Tooltip formatter={(value: any) => [`AED ${Number(value).toLocaleString()}`, "Revenue"]} />
+                  <Tooltip formatter={(value) => [`AED ${Number(value).toLocaleString()}`, "Revenue"]} />
                   <Line type="monotone" dataKey="revenue" stroke="#0b1f3a" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -252,7 +267,7 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
                   <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#9ca3af" />
-                  <Tooltip formatter={(value: any) => [Number(value), "Documents"]} />
+                  <Tooltip formatter={(value) => [Number(value), "Documents"]} />
                   <Bar dataKey="count" fill="#0b1f3a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

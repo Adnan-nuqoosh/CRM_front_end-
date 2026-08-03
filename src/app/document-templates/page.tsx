@@ -248,94 +248,115 @@ function Badge({ label, colorClass }: { label: string; colorClass?: string }) {
 }
 
 export default function DocumentTemplatesPage() {
-  // ── Library state ────────────────────────────────────────────────────────
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [expanded, setExpanded]   = useState<number | null>(null);
-  const [error, setError]         = useState<string | null>(null);
-
-  // ── Create-form state ────────────────────────────────────────────────────
-  const [submitting, setSubmitting]   = useState(false);
-  const [success, setSuccess]         = useState(false);
-  const [name, setName]               = useState("");
-  const [type, setType]               = useState("invoice");
-  const [content, setContent]         = useState("");
-  const [category, setCategory]       = useState("");
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [editing, setEditing] = useState<DocumentTemplate | null>(null);
+  const [actionId, setActionId] = useState<number | null>(null);
+  const [name, setName] = useState("");
+  const [type, setType] = useState("contract");
+  const [content, setContent] = useState("");
+  const [category, setCategory] = useState("");
   const [subCategory, setSubCategory] = useState("");
+  const [status, setStatus] = useState<"draft" | "published">("published");
   const [activeCompanyName, setActiveCompanyName] = useState("");
-
-  // ── Permission flags (read once on mount, storage is ready client-side) ─
   const [canCreateTemplate, setCanCreateTemplate] = useState(false);
+  const [canEditTemplate, setCanEditTemplate] = useState(false);
+  const [canDuplicateTemplate, setCanDuplicateTemplate] = useState(false);
+  const [canArchiveTemplate, setCanArchiveTemplate] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setCanCreateTemplate(hasPermission("templates.create"));
+    setCanEditTemplate(hasPermission("templates.edit"));
+    setCanDuplicateTemplate(hasPermission("templates.duplicate"));
+    setCanArchiveTemplate(hasPermission("templates.archive"));
   }, []);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Form is submittable only when all fields are filled AND user has permission
-  const canCreate = useMemo(
+  const canSave = useMemo(
     () =>
-      canCreateTemplate &&
+      (editing ? canEditTemplate : canCreateTemplate) &&
       name.trim().length > 1 &&
-      type.trim().length > 0 &&
-      content.trim().length > 5 &&
+      type.trim().length > 1 &&
+      content.trim().length > 10 &&
       !submitting,
-    [canCreateTemplate, content, name, submitting, type],
+    [canCreateTemplate, canEditTemplate, content, editing, name, submitting, type],
   );
 
   function loadStarter(cat: string, sub: string) {
-    const catMap = STARTER_TEMPLATES[cat];
-    if (!catMap) { setContent(""); return; }
-    setContent(catMap[sub] ?? catMap["default"] ?? "");
+    const starter = STARTER_TEMPLATES[cat]?.[sub || "default"];
+    if (starter) setContent(starter);
   }
 
-  function handleCategoryChange(val: string) {
-    setCategory(val);
+  function handleCategoryChange(value: string) {
+    setCategory(value);
     setSubCategory("");
-    loadStarter(val, "");
+    if (!editing) loadStarter(value, "");
   }
 
-  function handleSubCategoryChange(val: string) {
-    setSubCategory(val);
-    loadStarter(category, val);
+  function handleSubCategoryChange(value: string) {
+    setSubCategory(value);
+    if (!editing) loadStarter(category, value);
   }
 
-  function insertPlaceholder(ph: string) {
-    const ta = textareaRef.current;
-    if (!ta) { setContent((c) => c + ph); return; }
-    const start = ta.selectionStart;
-    const end   = ta.selectionEnd;
-    const next  = content.substring(0, start) + ph + content.substring(end);
-    setContent(next);
-    setTimeout(() => {
-      ta.focus();
-      ta.setSelectionRange(start + ph.length, start + ph.length);
+  function insertPlaceholder(placeholder: string) {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setContent((current) => current + placeholder);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    setContent(content.substring(0, start) + placeholder + content.substring(end));
+    window.setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + placeholder.length, start + placeholder.length);
     }, 0);
+  }
+
+  function resetForm() {
+    setEditing(null);
+    setName("");
+    setType("contract");
+    setContent("");
+    setCategory("");
+    setSubCategory("");
+    setStatus("published");
+  }
+
+  function beginEdit(template: DocumentTemplate) {
+    setEditing(template);
+    setName(template.name);
+    setType(template.type);
+    setContent(template.content);
+    setCategory(template.category ?? "");
+    setSubCategory(template.sub_category ?? "");
+    setStatus(template.status === "draft" ? "draft" : "published");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function refresh() {
     setError(null);
     setLoading(true);
     try {
-      const res = await crmApi.templates.list();
-      setTemplates(res ?? []);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load templates.");
+      setTemplates(await crmApi.templates.list());
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Failed to load templates.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { void refresh(); }, []);
-
   useEffect(() => {
+    void refresh();
     async function loadCompanyName() {
       try {
-        const companyId = getActiveCompanyId();
-        const res = await crmApi.companies.list();
-        const companies = res.companies ?? [];
-        const active = companies.find((c: any) => c.id === companyId);
+        const activeId = getActiveCompanyId();
+        const response = await crmApi.companies.list();
+        const active = response.companies.find((company) => company.id === activeId);
         setActiveCompanyName(active?.name?.toLowerCase() ?? "");
       } catch {
         setActiveCompanyName("");
@@ -344,270 +365,177 @@ export default function DocumentTemplatesPage() {
     void loadCompanyName();
   }, []);
 
-  async function onCreate(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!canCreate) return;
-
+  async function saveTemplate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSave) return;
     setSubmitting(true);
     setError(null);
-    setSuccess(false);
-
+    setSuccess(null);
     try {
-      await crmApi.templates.create({
+      const payload = {
         name: name.trim(),
         type: type.trim(),
-        category,
-        sub_category: subCategory,
+        category: category || undefined,
+        sub_category: subCategory || undefined,
         content,
-      });
-
-      setName(""); setCategory(""); setSubCategory(""); setContent(""); setType("invoice");
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 4000);
+        status,
+      };
+      if (editing) {
+        await crmApi.templates.update(editing.id, payload);
+        setSuccess("Template updated and a new version was recorded.");
+      } else {
+        await crmApi.templates.create(payload);
+        setSuccess("Template created successfully.");
+      }
+      resetForm();
       await refresh();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create template.");
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Unable to save template.");
     } finally {
       setSubmitting(false);
     }
   }
 
+  async function duplicateTemplate(template: DocumentTemplate) {
+    if (!canDuplicateTemplate) return;
+    setActionId(template.id);
+    setError(null);
+    try {
+      await crmApi.templates.duplicate(template.id);
+      setSuccess(`“${template.name}” duplicated successfully.`);
+      await refresh();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Unable to duplicate template.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function archiveTemplate(template: DocumentTemplate) {
+    if (!canArchiveTemplate || !window.confirm(`Archive “${template.name}”? Existing documents will remain available.`)) return;
+    setActionId(template.id);
+    setError(null);
+    try {
+      await crmApi.templates.archive(template.id);
+      if (editing?.id === template.id) resetForm();
+      setSuccess("Template archived successfully.");
+      await refresh();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : "Unable to archive template.");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  const showEditor = canCreateTemplate || (editing !== null && canEditTemplate);
+
   return (
-    <AppShell title="Templates" subtitle="Manage reusable document templates for the active company.">
+    <AppShell title="Document Templates" subtitle="Build, version and control reusable company documents.">
+      {error ? (
+        <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      ) : null}
+      {success ? (
+        <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">{success}</div>
+      ) : null}
 
-      {error && (
-        <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" viewBox="0 0 24 24" fill="none">
-            <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      )}
-      {success && (
-        <div className="mb-5 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <svg className="h-4 w-4 shrink-0 text-emerald-500" viewBox="0 0 24 24" fill="none">
-            <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <p className="text-sm font-medium text-emerald-700">Template created successfully!</p>
-        </div>
-      )}
-
-      {/*
-        Grid is 2-column when user can create templates (super-admin, admin,
-        office-manager), single column for view-only roles (hr-manager etc.)
-      */}
-      <div className={`grid grid-cols-1 gap-6 ${canCreateTemplate ? "xl:grid-cols-[1fr_400px]" : ""}`}>
-
-        {/* ══════════════════════════════════════════
-            LEFT — Template Library (all roles with templates.view)
-        ══════════════════════════════════════════ */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-6 py-4 shadow-sm">
+      <div className={`grid grid-cols-1 gap-6 ${showEditor ? "xl:grid-cols-[minmax(0,1fr)_430px]" : ""}`}>
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-neutral-200 bg-white px-6 py-5 shadow-sm">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Library</p>
-              <p className="mt-1 text-sm text-neutral-500">
-                {loading ? "Loading…" : `${templates.length} template${templates.length !== 1 ? "s" : ""} in active company`}
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Template library</p>
+              <h2 className="mt-1 text-lg font-semibold text-neutral-900">Controlled company content</h2>
+              <p className="mt-1 text-sm text-neutral-500">{loading ? "Loading templates…" : `${templates.length} active template${templates.length === 1 ? "" : "s"}`}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              disabled={loading}
-              className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 shadow-sm hover:bg-neutral-50 active:bg-neutral-100 disabled:opacity-50"
-            >
-              <svg className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none">
-                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M21 3v5h-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Refresh
+            <button type="button" onClick={() => void refresh()} disabled={loading} className="rounded-xl border border-neutral-200 px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+              {loading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
 
           {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-24 animate-pulse rounded-xl border border-neutral-200 bg-neutral-100"/>
-              ))}
-            </div>
+            <div className="space-y-3">{[1, 2, 3].map((item) => <div key={item} className="h-28 animate-pulse rounded-2xl bg-neutral-100" />)}</div>
           ) : templates.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-neutral-200 bg-white px-6 py-16 text-center">
-              <svg className="mx-auto h-10 w-10 text-neutral-300" viewBox="0 0 24 24" fill="none">
-                <path d="M7 3h7l3 3v15a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                <path d="M14 3v4h4M9 12h6M9 16h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              <p className="mt-3 text-sm font-semibold text-neutral-500">No templates yet</p>
-              <p className="mt-1 text-xs text-neutral-400">
-                {canCreateTemplate
-                  ? "Create your first template using the form on the right."
-                  : "No templates have been created for this company yet."}
-              </p>
+            <div className="rounded-2xl border-2 border-dashed border-neutral-200 bg-white px-6 py-16 text-center">
+              <p className="font-semibold text-neutral-700">No active templates</p>
+              <p className="mt-1 text-sm text-neutral-400">Create the first approved template for this workspace.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {templates.map((t) => {
-                const isOpen = expanded === t.id;
+              {templates.map((template) => {
+                const isOpen = expanded === template.id;
                 return (
-                  <div key={t.id} className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-                    <button
-                      type="button"
-                      onClick={() => setExpanded(isOpen ? null : t.id)}
-                      className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
-                    >
-                      <div className="min-w-0 flex-1">
+                  <article key={template.id} className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+                    <button type="button" onClick={() => setExpanded(isOpen ? null : template.id)} className="flex w-full items-start justify-between gap-4 px-5 py-5 text-left hover:bg-neutral-50/60">
+                      <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-neutral-900">{t.name}</p>
-                          {t.category && <Badge label={t.category} colorClass={CATEGORY_COLORS[t.category]}/>}
-                          {t.sub_category && <Badge label={t.sub_category} colorClass={SUB_COLORS[t.sub_category]}/>}
+                          <h3 className="font-semibold text-neutral-900">{template.name}</h3>
+                          <Badge label={template.status ?? "published"} colorClass={template.status === "draft" ? "border border-amber-200 bg-amber-50 text-amber-700" : "border border-emerald-200 bg-emerald-50 text-emerald-700"} />
+                          {template.category ? <Badge label={template.category} colorClass={CATEGORY_COLORS[template.category]} /> : null}
+                          {template.sub_category ? <Badge label={template.sub_category} colorClass={SUB_COLORS[template.sub_category]} /> : null}
                         </div>
-                        <p className="mt-1 text-xs text-neutral-400">Type: {t.type} · ID {t.id}</p>
+                        <p className="mt-2 text-xs text-neutral-400">{template.type} · Version {template.version ?? 1} · {template.documents_count ?? 0} generated documents</p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <svg
-                          className={`h-4 w-4 text-neutral-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                          viewBox="0 0 24 24" fill="none"
-                        >
-                          <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </div>
+                      <span className={`mt-1 text-neutral-400 transition ${isOpen ? "rotate-180" : ""}`}>⌄</span>
                     </button>
-
-                    {isOpen && (
-                      <div className="border-t border-neutral-100 px-5 pb-4 pt-3">
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Content Preview</p>
-                        <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-lg border border-neutral-100 bg-neutral-50 p-3 font-mono text-[11px] leading-relaxed text-neutral-600">
-                          {t.content}
-                        </pre>
+                    {isOpen ? (
+                      <div className="border-t border-neutral-100 px-5 py-4">
+                        <div className="mb-4 flex flex-wrap gap-2">
+                          {canEditTemplate ? <button type="button" onClick={() => beginEdit(template)} className="rounded-lg bg-[#0b1f3a] px-3 py-2 text-xs font-semibold text-white">Edit</button> : null}
+                          {canDuplicateTemplate ? <button type="button" onClick={() => void duplicateTemplate(template)} disabled={actionId === template.id} className="rounded-lg border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Duplicate</button> : null}
+                          {canArchiveTemplate ? <button type="button" onClick={() => void archiveTemplate(template)} disabled={actionId === template.id} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">Archive</button> : null}
+                        </div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">HTML content preview</p>
+                        <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-neutral-100 bg-neutral-50 p-4 font-mono text-[11px] leading-relaxed text-neutral-600">{template.content}</pre>
                       </div>
-                    )}
-                  </div>
+                    ) : null}
+                  </article>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* ══════════════════════════════════════════
-            RIGHT — Create Template
-            Only rendered for users with templates.create permission
-            (super-admin, admin, office-manager)
-        ══════════════════════════════════════════ */}
-        {canCreateTemplate && (
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-            <div className="border-b border-neutral-100 px-6 py-5">
-              <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">Create</p>
-              <h2 className="mt-1 text-base font-semibold text-neutral-900">Create template</h2>
-              <p className="mt-0.5 text-xs text-neutral-500">Category select karo — content auto-load hoga.</p>
+        {showEditor ? (
+          <aside className="h-fit rounded-2xl border border-neutral-200 bg-white shadow-sm xl:sticky xl:top-5">
+            <div className="flex items-start justify-between border-b border-neutral-100 px-6 py-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">{editing ? "Version update" : "New template"}</p>
+                <h2 className="mt-1 text-lg font-semibold text-neutral-900">{editing ? `Edit ${editing.name}` : "Create template"}</h2>
+              </div>
+              {editing ? <button type="button" onClick={resetForm} className="text-xs font-semibold text-neutral-500 hover:text-neutral-900">Cancel</button> : null}
             </div>
-
-            <form onSubmit={onCreate} className="space-y-5 px-6 py-5">
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Category</label>
-                <select
-                  value={category}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
-                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-                >
-                  <option value="">Select category…</option>
-                  <option value="NDA">NDA</option>
-                  {activeCompanyName === "vmc" && <option value="MNDA">MNDA</option>}
-                  <option value="Contract">Contract</option>
+            <form onSubmit={saveTemplate} className="space-y-4 px-6 py-5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500">Category
+                <select value={category} onChange={(event) => handleCategoryChange(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm font-normal normal-case text-neutral-800 outline-none focus:border-[#0b1f3a]">
+                  <option value="">Select category</option><option value="NDA">NDA</option>{activeCompanyName === "vmc" ? <option value="MNDA">MNDA</option> : null}<option value="Contract">Contract</option>
                 </select>
+              </label>
+              {category === "Contract" ? <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500">Subcategory
+                <select value={subCategory} onChange={(event) => handleSubCategoryChange(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm font-normal normal-case text-neutral-800 outline-none focus:border-[#0b1f3a]">
+                  <option value="">Select subcategory</option><option value="Website Only">Website Only</option><option value="Website + Branding">Website + Branding</option><option value="Branding Only">Branding Only</option>
+                </select>
+              </label> : null}
+              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500">Template name
+                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Standard Service Agreement" className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm font-normal normal-case outline-none focus:border-[#0b1f3a]" />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500">Type
+                  <input value={type} onChange={(event) => setType(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm font-normal normal-case outline-none focus:border-[#0b1f3a]" />
+                </label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500">Status
+                  <select value={status} onChange={(event) => setStatus(event.target.value as "draft" | "published")} className="mt-1.5 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm font-normal normal-case outline-none focus:border-[#0b1f3a]"><option value="published">Published</option><option value="draft">Draft</option></select>
+                </label>
               </div>
-
-              {category === "Contract" && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Sub Category</label>
-                  <select
-                    value={subCategory}
-                    onChange={(e) => handleSubCategoryChange(e.target.value)}
-                    className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-                  >
-                    <option value="">Select sub category…</option>
-                    <option value="Website Only">Website Only</option>
-                    <option value="Website + Branding">Website + Branding</option>
-                    <option value="Branding Only">Branding Only</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Template Name</label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Nuqoosh NDA 2026"
-                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-                />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Insert variable</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">{PLACEHOLDERS.map((placeholder) => <button key={placeholder.value} type="button" onClick={() => insertPlaceholder(placeholder.value)} className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-[11px] font-semibold text-neutral-600 hover:border-[#0b1f3a] hover:bg-[#0b1f3a] hover:text-white">{placeholder.label}</button>)}</div>
               </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Type</label>
-                <input
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  placeholder="invoice"
-                  className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:ring-1 focus:ring-[#0b1f3a]/10"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Insert Variable</label>
-                <p className="text-[11px] text-neutral-400">Content mein cursor rakh ke koi bhi button dabao.</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {PLACEHOLDERS.map((p) => (
-                    <button
-                      key={p.value}
-                      type="button"
-                      onClick={() => insertPlaceholder(p.value)}
-                      className="rounded-md border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] font-semibold text-neutral-600 transition hover:border-[#0b1f3a] hover:bg-[#0b1f3a] hover:text-white"
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Content (HTML)</label>
-                  {content && <span className="text-[11px] text-neutral-400">{content.length} chars</span>}
-                </div>
-                <textarea
-                  ref={textareaRef}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  rows={11}
-                  placeholder={category ? "Content load ho raha hai…" : "Pehle category select karo…"}
-                  className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-neutral-700 outline-none placeholder:text-neutral-300 focus:border-[#0b1f3a] focus:bg-white focus:ring-1 focus:ring-[#0b1f3a]/10"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={!canCreate}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#0b1f3a] text-sm font-semibold text-white transition hover:bg-[#0d2444] active:bg-[#091a31] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
-              >
-                {submitting ? (
-                  <>
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25"/>
-                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                    </svg>
-                    Saving…
-                  </>
-                ) : (
-                  <>
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                    Create template
-                  </>
-                )}
-              </button>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500">Content (HTML)
+                <textarea ref={textareaRef} value={content} onChange={(event) => setContent(event.target.value)} rows={14} className="mt-1.5 w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3 font-mono text-[11px] font-normal normal-case leading-relaxed outline-none focus:border-[#0b1f3a] focus:bg-white" />
+              </label>
+              <button type="submit" disabled={!canSave} className="h-11 w-full rounded-xl bg-[#0b1f3a] text-sm font-semibold text-white hover:bg-[#102b4f] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400">{submitting ? "Saving…" : editing ? "Save new version" : "Create template"}</button>
             </form>
-          </div>
-        )}
+          </aside>
+        ) : null}
       </div>
     </AppShell>
   );
