@@ -1,39 +1,22 @@
-# Nuqoosh CRM Professional V2 — Next.js Frontend
+# Nuqoosh CRM Professional V3 — Frontend
 
-Responsive Next.js 16 interface for the Nuqoosh Laravel CRM API.
+Next.js 16 / React 19 enterprise CRM frontend.
 
-## Included screens
+V3 adds permission-driven navigation, role-aware dashboards, Projects, advanced Tasks, protected Contracts, Meetings, Follow-Ups, Customer Requests, dynamic Roles & Permissions, notifications and updated user administration.
 
-- Login
-- Role-aware dashboard and analytics
-- Company selection and company settings
-- Client management
-- Versioned document templates
-- Document generation, approval, archive and download
-- User and role management
-- Tasks
-- Audit Trail
-- Global CRM search
+## Environment
 
-## Setup
+```env
+NEXT_PUBLIC_API_BASE_URL=https://crm.thelootah.com
+```
+
+## Run
 
 ```bash
-cp .env.example .env.local
 npm ci
-npm run dev
-```
-
-`.env.local`:
-
-```dotenv
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-```
-
-## Production build
-
-```bash
+npm run lint
 npm run build
 npm run start
 ```
 
-UI permissions improve usability, but the Laravel API remains the final authority for every protected action.
+Production can continue using the existing PM2 `nuqoosh-frontend` process.

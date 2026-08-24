@@ -3,382 +3,47 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import { crmApi, type Company } from "@/lib/crmApi";
-import { getActiveCompanyId } from "@/lib/auth";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { getUser, getUserRole, hasPermission } from "@/lib/auth";
+import { crmApi, type DashboardData, type Project, type Task } from "@/lib/crmApi";
 
-/** Small metric card used in the stats row (Companies / Clients / Templates / Documents). */
-function StatCard(props: { label: string; value: string; helper?: string }) {
-  return (
-    <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-      <p className="text-xs font-semibold tracking-wide text-neutral-500">{props.label}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-neutral-900">{props.value}</p>
-      {props.helper ? <p className="mt-2 text-xs font-medium text-neutral-500">{props.helper}</p> : null}
-    </div>
-  );
-}
+const labels: Record<string,string>={planning:"Planning",in_progress:"In progress",on_hold:"On hold",completed:"Completed",cancelled:"Cancelled",pending:"To do",review:"Review",blocked:"Blocked"};
+const statusClass:Record<string,string>={planning:"bg-slate-100 text-slate-700",pending:"bg-slate-100 text-slate-700",in_progress:"bg-blue-50 text-blue-700",review:"bg-amber-50 text-amber-700",blocked:"bg-rose-50 text-rose-700",on_hold:"bg-amber-50 text-amber-700",completed:"bg-emerald-50 text-emerald-700",cancelled:"bg-slate-100 text-slate-500"};
+function fmtDate(v?:string|null){if(!v)return "—";return new Intl.DateTimeFormat("en",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(v));}
+function roleName(r:string|null){return r?r.split("-").map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(" "):"Team Member"}
+function Card({label,value,caption,href,tone="blue"}:{label:string;value:number|string;caption:string;href?:string;tone?:"blue"|"emerald"|"amber"|"rose"|"violet"}){const t={blue:"from-blue-600 to-indigo-700",emerald:"from-emerald-500 to-teal-700",amber:"from-amber-500 to-orange-600",rose:"from-rose-500 to-pink-700",violet:"from-violet-600 to-indigo-700"}[tone];const c=<div className="group overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.14em] text-slate-400">{label}</p><p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{value}</p></div><div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${t} opacity-90 shadow-lg`}/></div><p className="mt-4 text-xs text-slate-500">{caption}</p></div>;return href?<Link href={href}>{c}</Link>:c}
+function Progress({value}:{value:number}){return <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-600" style={{width:`${Math.min(100,Math.max(0,value))}%`}}/></div>}
 
-/** Heading row with an optional subtitle and a right-aligned action (e.g. a button). */
-function SectionTitle(props: { title: string; subtitle?: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex items-end justify-between gap-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight text-neutral-900">{props.title}</h2>
-        {props.subtitle ? <p className="mt-1 text-sm text-neutral-600">{props.subtitle}</p> : null}
-      </div>
-      {props.action ? <div className="shrink-0">{props.action}</div> : null}
-    </div>
-  );
-}
+export default function DashboardPage(){
+ const [data,setData]=useState<DashboardData|null>(null); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
+ const user=getUser(); const role=getUserRole();
+ useEffect(()=>{crmApi.dashboard.get().then(setData).catch(e=>setError(e instanceof Error?e.message:"Unable to load dashboard")).finally(()=>setLoading(false));},[]);
+ const summary=data?.summary??{}; const projectStatus=data?.project_status??{}; const taskStatus=data?.task_status??{};
+ const totalProject=Object.values(projectStatus).reduce((a,b)=>a+b,0); const totalTask=Object.values(taskStatus).reduce((a,b)=>a+b,0);
+ const isTeam=["developer","front-end-developer","back-end-developer","graphic-designer","employee"].includes(role??"");
+ const cards=useMemo(()=>{
+   const items: Array<{label:string;value:number|string;caption:string;href:string;tone:"blue"|"emerald"|"amber"|"rose"|"violet"}> = [{label:isTeam?"My projects":"Projects",value:Number(summary.projects??totalProject??0),caption:isTeam?"Projects assigned to you":"Projects in your accessible scope",href:"/projects",tone:"blue" as const},{label:isTeam?"My tasks":"Open tasks",value:Number(summary.open_tasks??summary.tasks??totalTask??0),caption:"Tasks currently requiring attention",href:"/tasks",tone:"violet" as const},{label:"Overdue",value:Number(summary.overdue_tasks??0),caption:"Tasks past their due date",href:"/tasks",tone:"rose" as const},{label:"Completed",value:Number(summary.completed_tasks??taskStatus.completed??0),caption:"Tasks successfully completed",href:"/tasks",tone:"emerald" as const}];
+   if(hasPermission("clients.view")) items.push({label:"Clients",value:Number(summary.clients??0),caption:"Active customer relationships",href:"/clients",tone:"amber"});
+   if(hasPermission("contracts.view")) items.push({label:"Contracts",value:Number(summary.contracts??0),caption:"Contracts visible to your role",href:"/contracts",tone:"blue"}); return items;
+ },[summary,totalProject,totalTask,taskStatus.completed,isTeam]);
+ return <AppShell title={`Welcome${user?.name?`, ${user.name.split(" ")[0]}`:""}`} subtitle={`${user?.designation||roleName(role)} · secure role-based workspace`}>
+   {error&&<div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
+   {loading?<div className="grid min-h-[55vh] place-items-center"><div className="h-9 w-9 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"/></div>:<>
+   <section className="mb-7 overflow-hidden rounded-3xl bg-[#081a35] p-6 text-white shadow-xl sm:p-8"><div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end"><div><span className="inline-flex rounded-full border border-blue-300/20 bg-blue-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[.18em] text-blue-100">Nuqoosh Enterprise Workspace</span><h2 className="mt-4 max-w-3xl text-2xl font-bold tracking-tight sm:text-3xl">Your work, permissions and priorities — in one accountable view.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Dashboards automatically adapt to your role and assigned data. Sensitive modules remain invisible unless explicitly authorized.</p></div><div className="grid grid-cols-2 gap-3 text-center"><div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3"><div className="text-2xl font-black">{totalProject}</div><div className="text-[10px] uppercase tracking-wider text-slate-400">Projects</div></div><div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3"><div className="text-2xl font-black">{totalTask}</div><div className="text-[10px] uppercase tracking-wider text-slate-400">Tasks</div></div></div></div></section>
+   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">{cards.map((c,i)=><Card key={i} {...c}/>)}</div>
 
-/** Clickable shortcut card used in the "Getting started" grid. */
-function ActionLink(props: { href: string; title: string; desc: string }) {
-  return (
-    <Link
-      href={props.href}
-      className="block border border-neutral-200 bg-white px-4 py-4 hover:bg-neutral-50 active:bg-neutral-100"
-    >
-      <p className="text-sm font-semibold text-neutral-900">{props.title}</p>
-      <p className="mt-1 text-sm text-neutral-600">{props.desc}</p>
-    </Link>
-  );
-}
+   <div className="mt-7 grid gap-6 xl:grid-cols-[1.4fr_.9fr]">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div><h3 className="font-bold">{isTeam?"My projects":"Project portfolio"}</h3><p className="text-xs text-slate-500">Progress and delivery health</p></div><Link href="/projects" className="text-xs font-semibold text-blue-600">View projects →</Link></div><div className="divide-y divide-slate-100">{(data?.my_projects??[]).slice(0,6).map((p:Project)=><Link href="/projects" key={p.id} className="block px-5 py-4 hover:bg-slate-50"><div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex items-center gap-2"><span className="truncate font-semibold text-slate-800">{p.name}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusClass[p.status]??statusClass.pending}`}>{labels[p.status]??p.status}</span></div><div className="mt-1 text-xs text-slate-500">{p.code||`Project #${p.id}`} · Due {fmtDate(p.due_date)}</div></div><div className="text-sm font-bold text-slate-700">{p.progress??0}%</div></div><div className="mt-3"><Progress value={p.progress??0}/></div></Link>)}{!(data?.my_projects??[]).length&&<div className="px-5 py-10 text-center text-sm text-slate-500">No projects available in your current scope.</div>}</div></section>
 
-// Shape of the analytics payload returned by GET /api/analytics.
-type AnalyticsData = {
-  revenue_by_month: { month: string; revenue: number }[];
-  top_clients: { client_name: string; document_count: number; total_amount: number }[];
-  documents_by_month: { month: string; count: number }[];
-};
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h3 className="font-bold">Task distribution</h3><p className="text-xs text-slate-500">Current workflow state</p></div><Link href="/tasks" className="text-xs font-semibold text-blue-600">Open tasks</Link></div><div className="mt-6 space-y-4">{Object.entries(taskStatus).filter(([,v])=>v>0).map(([k,v])=><div key={k}><div className="mb-1.5 flex items-center justify-between text-xs"><span className="font-medium text-slate-600">{labels[k]??k}</span><span className="font-bold text-slate-800">{v}</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{width:`${totalTask?Math.max(4,(v/totalTask)*100):0}%`}}/></div></div>)}{!Object.values(taskStatus).some(v=>v>0)&&<div className="py-10 text-center text-sm text-slate-500">No task activity yet.</div>}</div></section>
+   </div>
 
-export default function DashboardPage() {
-  const [name, setName]             = useState<string | null>(null);
-  const [todayLabel, setTodayLabel] = useState<string>("—");
+   <div className="mt-6 grid gap-6 xl:grid-cols-2">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div><h3 className="font-bold">Priority work</h3><p className="text-xs text-slate-500">Assigned tasks and deadlines</p></div><Link href="/tasks" className="text-xs font-semibold text-blue-600">See all →</Link></div><div className="divide-y divide-slate-100">{(data?.my_tasks??[]).slice(0,7).map((t:Task)=><Link href="/tasks" key={t.id} className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50"><div className={`h-2.5 w-2.5 shrink-0 rounded-full ${t.priority==="urgent"?"bg-rose-500":t.priority==="high"?"bg-orange-500":t.priority==="medium"?"bg-blue-500":"bg-slate-400"}`}/><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-800">{t.title}</div><div className="mt-0.5 truncate text-[11px] text-slate-500">{t.project_name||"General task"} · Due {fmtDate(t.due_date)}</div></div><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${statusClass[t.status]??statusClass.pending}`}>{labels[t.status]??t.status}</span></Link>)}{!(data?.my_tasks??[]).length&&<div className="px-5 py-10 text-center text-sm text-slate-500">No assigned tasks.</div>}</div></section>
 
-  const [companies, setCompanies]                 = useState<Company[]>([]);
-  const [activeCompanyId, setActiveCompanyIdState] = useState<number | null>(null);
-  const [counts, setCounts]                       = useState<{ clients: number; templates: number; documents: number } | null>(null);
-  const [analytics, setAnalytics]                 = useState<AnalyticsData | null>(null);
-  const [loadError, setLoadError]                 = useState<string | null>(null);
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h3 className="font-bold">Upcoming operations</h3><p className="text-xs text-slate-500">Meetings, follow-ups and reminders</p></div><div className="grid gap-3 p-5 sm:grid-cols-2">{(data?.upcoming_meetings??[]).slice(0,3).map(m=><Link href="/meetings" key={`m${m.id}`} className="rounded-xl border border-slate-200 p-4 hover:border-blue-200 hover:bg-blue-50/30"><div className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Meeting</div><div className="mt-1 truncate text-sm font-semibold">{m.title}</div><div className="mt-2 text-xs text-slate-500">{fmtDate(m.starts_at)}</div></Link>)}{(data?.follow_ups??[]).slice(0,3).map(f=><Link href="/follow-ups" key={`f${f.id}`} className="rounded-xl border border-slate-200 p-4 hover:border-amber-200 hover:bg-amber-50/30"><div className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Follow-up</div><div className="mt-1 truncate text-sm font-semibold">{f.subject}</div><div className="mt-2 text-xs text-slate-500">{fmtDate(f.due_at)}</div></Link>)}{!(data?.upcoming_meetings??[]).length&&!(data?.follow_ups??[]).length&&<div className="col-span-2 py-10 text-center text-sm text-slate-500">Nothing upcoming.</div>}</div></section>
+   </div>
 
-  // Load browser-only display data after mount. The timeout keeps these
-  // state updates out of the synchronous effect body and avoids cascading renders.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        const raw =
-          window.localStorage.getItem("nuqoosh.user") ??
-          window.sessionStorage.getItem("nuqoosh.user");
-
-        if (raw) {
-          const user = JSON.parse(raw) as { name?: string };
-          setName(typeof user.name === "string" ? user.name : null);
-        }
-      } catch {
-        setName(null);
-      }
-
-      const formattedDate = new Intl.DateTimeFormat(undefined, {
-        weekday: "long",
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }).format(new Date());
-
-      setTodayLabel(formattedDate);
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const activeCompany = useMemo(
-    () => companies.find((c) => c.id === activeCompanyId) ?? null,
-    [activeCompanyId, companies],
-  );
-
-  // Load companies + (if a company is active) counts and analytics.
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoadError(null);
-      try {
-        const res = await crmApi.companies.list();
-        if (cancelled) return;
-
-        setCompanies(res.companies ?? []);
-        const stored = getActiveCompanyId();
-        setActiveCompanyIdState(stored);
-
-        // Counts + analytics require an active company — skip if none is set.
-        if (!stored) {
-          setCounts(null);
-          setAnalytics(null);
-          return;
-        }
-
-        // Load each resource independently — if the user lacks permission
-        // for one (e.g. HR Manager can't view templates/analytics), that
-        // resource just falls back to an empty/null value instead of
-        // breaking the whole dashboard.
-        const [clientsRes, templatesRes, documentsRes, analyticsRes] = await Promise.allSettled([
-          crmApi.clients.list(),
-          crmApi.templates.list(),
-          crmApi.documents.list(),
-          crmApi.analytics.get(),
-        ]);
-        if (cancelled) return;
-
-        const clients        = clientsRes.status === "fulfilled" ? clientsRes.value : [];
-        const templates       = templatesRes.status === "fulfilled" ? templatesRes.value : [];
-        const documents        = documentsRes.status === "fulfilled" ? documentsRes.value : [];
-        const analyticsData = analyticsRes.status === "fulfilled" ? analyticsRes.value : null;
-
-        setCounts({
-          clients: clients?.length ?? 0,
-          templates: templates?.length ?? 0,
-          documents: documents?.length ?? 0,
-        });
-        setAnalytics(analyticsData);
-      } catch (e: unknown) {
-        if (cancelled) return;
-        setCounts(null);
-        setAnalytics(null);
-        setLoadError(
-          e && typeof e === "object" && "message" in e && typeof e.message === "string"
-            ? e.message
-            : "Failed to load dashboard.",
-        );
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Total revenue across the loaded 6-month window, for the chart card subtitle.
-  const totalRevenue = useMemo(() => {
-    if (!analytics) return 0;
-    return analytics.revenue_by_month.reduce((sum, m) => sum + m.revenue, 0);
-  }, [analytics]);
-
-  return (
-    <AppShell title="Dashboard" subtitle="Your CRM workspace at a glance.">
-      {loadError ? (
-        <div className="mb-6 border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-neutral-900">{loadError}</div>
-      ) : null}
-
-      {/* ── Welcome banner ── */}
-      <div className="mb-8 border border-neutral-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold tracking-wide text-neutral-500">{todayLabel}</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-neutral-900">
-              {name ? `Welcome back, ${name}.` : "Welcome back."}
-            </h2>
-            <p className="mt-2 text-sm text-neutral-600">
-              {activeCompany
-                ? `Active company: ${activeCompany.name}`
-                : "No active company selected yet. Select a company to unlock clients, templates, and documents."}
-            </p>
-          </div>
-
-          <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-            <Link
-              href="/companies"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0b1f3a] px-5 text-sm font-semibold text-white hover:bg-[#091a31] active:bg-[#071429]"
-            >
-              {activeCompany ? "Change company" : "Select company"}
-            </Link>
-            <Link
-              href="/documents"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0b1f3a] px-5 text-sm font-semibold text-white hover:bg-[#091a31] active:bg-[#071429]"
-            >
-              Generate document
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Stats row ── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Companies" value={String(companies.length)} helper="Workspaces you can access" />
-        <StatCard
-          label="Clients"
-          value={counts ? String(counts.clients) : "—"}
-          helper={activeCompany ? "In active company" : "Select a company"}
-        />
-        <StatCard
-          label="Templates"
-          value={counts ? String(counts.templates) : "—"}
-          helper={activeCompany ? "Ready to generate documents" : "Select a company"}
-        />
-        <StatCard
-          label="Documents"
-          value={counts ? String(counts.documents) : "—"}
-          helper={activeCompany ? "Generated PDFs" : "Select a company"}
-        />
-      </div>
-
-      {/* ── Analytics charts ── */}
-      {activeCompany && analytics ? (
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-
-          {/* Revenue by month */}
-          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-            <SectionTitle
-              title="Revenue (last 6 months)"
-              subtitle={`Total: AED ${totalRevenue.toLocaleString()}`}
-            />
-            <div className="mt-5 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={analytics.revenue_by_month}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                  <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                  <Tooltip formatter={(value) => [`AED ${Number(value).toLocaleString()}`, "Revenue"]} />
-                  <Line type="monotone" dataKey="revenue" stroke="#0b1f3a" strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Documents generated by month */}
-          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-            <SectionTitle
-              title="Documents generated (last 6 months)"
-              subtitle="Number of contracts/NDAs created per month."
-            />
-            <div className="mt-5 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={analytics.documents_by_month}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} stroke="#9ca3af" />
-                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#9ca3af" />
-                  <Tooltip formatter={(value) => [Number(value), "Documents"]} />
-                  <Bar dataKey="count" fill="#0b1f3a" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Top clients */}
-          <div className="border border-neutral-200 bg-white p-6 shadow-sm lg:col-span-2">
-            <SectionTitle title="Top clients" subtitle="Ranked by number of documents generated." />
-            {analytics.top_clients.length === 0 ? (
-              <p className="mt-5 text-sm text-neutral-500">No documents generated yet for this company.</p>
-            ) : (
-              <div className="mt-5 overflow-hidden border border-neutral-200">
-                <table className="w-full border-separate border-spacing-0">
-                  <thead>
-                    <tr className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                      <th className="border-b border-neutral-200 px-5 py-3">Client</th>
-                      <th className="border-b border-neutral-200 px-5 py-3">Documents</th>
-                      <th className="border-b border-neutral-200 px-5 py-3">Total Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analytics.top_clients.map((c, i) => (
-                      <tr key={c.client_name + i} className="hover:bg-neutral-50">
-                        <td className="border-b border-neutral-100 px-5 py-3.5 text-sm font-semibold text-neutral-900">
-                          {c.client_name}
-                        </td>
-                        <td className="border-b border-neutral-100 px-5 py-3.5 text-sm text-neutral-700">
-                          {c.document_count}
-                        </td>
-                        <td className="border-b border-neutral-100 px-5 py-3.5 text-sm text-neutral-700">
-                          AED {c.total_amount.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-        </div>
-      ) : null}
-
-      {/* ── Shortcuts + status ── */}
-      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-          <SectionTitle
-            title="Getting started"
-            subtitle="Use these shortcuts to work faster."
-            action={
-              <Link
-                href="/documents"
-                className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0b1f3a] px-4 text-sm font-semibold text-white hover:bg-[#091a31] active:bg-[#071429]"
-              >
-                Generate PDF
-              </Link>
-            }
-          />
-
-          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <ActionLink href="/companies" title="Select company" desc="Choose the active company for CRM access." />
-            <ActionLink href="/clients" title="Add client" desc="Create a customer inside the active company." />
-            <ActionLink href="/document-templates" title="Create template" desc="Add reusable templates for documents." />
-            <ActionLink href="/documents" title="Generate document" desc="Pick client + template and download PDF." />
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-            <SectionTitle title="Active company" subtitle="Current workspace selection." />
-            <div className="mt-5 border border-neutral-200 bg-neutral-50 p-4">
-              <p className="text-xs font-semibold tracking-wide text-neutral-500">STATUS</p>
-              <p className="mt-2 text-sm font-semibold text-neutral-900">
-                {activeCompany ? activeCompany.name : "Not selected"}
-              </p>
-              <p className="mt-1 text-xs text-neutral-600">
-                {activeCompany
-                  ? "You can access clients, templates, and documents."
-                  : "Go to Companies and select a company to unlock CRM modules."}
-              </p>
-            </div>
-          </div>
-
-          <div className="border border-neutral-200 bg-white p-6 shadow-sm">
-            <SectionTitle title="What's available" subtitle="Modules implemented in this CRM." />
-            <ul className="mt-5 space-y-2 text-sm text-neutral-700">
-              <li className="flex items-start gap-3">
-                <span className="mt-1 h-2 w-2 bg-accent-400" />
-                Companies: list, create (admin), select active company
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 h-2 w-2 bg-accent-400" />
-                Clients: list + create (delete route exists but backend controller still needs `destroy()`)
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 h-2 w-2 bg-accent-400" />
-                Templates: list + create (admin)
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 h-2 w-2 bg-accent-400" />
-                Documents: list + generate + download PDF
-              </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-1 h-2 w-2 bg-accent-400" />
-                Analytics: revenue, document trends, and top clients
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </AppShell>
-  );
+   {!!data?.team_workload?.length&&<section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h3 className="font-bold">Team workload</h3><p className="text-xs text-slate-500">Open and overdue tasks across your managed team</p></div><div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">{data.team_workload.map(x=><div key={x.id} className="rounded-xl border border-slate-200 p-4"><div className="font-semibold">{x.name}</div><div className="text-xs text-slate-500">{x.designation||"Team member"}</div><div className="mt-4 flex gap-5 text-xs"><span><b className="text-lg text-slate-900">{x.open_tasks}</b><br/><span className="text-slate-500">Open</span></span><span><b className="text-lg text-rose-600">{x.overdue_tasks}</b><br/><span className="text-slate-500">Overdue</span></span></div></div>)}</div></section>}
+   </>}
+ </AppShell>
 }

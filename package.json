@@ -1,6 +1,6 @@
 {
-  "name": "nuqoosh-crm-professional-v2",
-  "version": "2.0.0",
+  "name": "nuqoosh-crm-professional-v3",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",

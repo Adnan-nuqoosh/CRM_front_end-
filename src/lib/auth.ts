@@ -9,6 +9,9 @@ export type AuthUser = {
   id: number;
   name: string;
   email: string;
+  phone?: string | null;
+  designation?: string | null;
+  department?: string | null;
   is_active?: boolean;
   active_company_id?: number | null;
 };
@@ -18,6 +21,8 @@ export type LoginResponse = {
   token_type: "Bearer";
   user: AuthUser;
   roles: string[];
+  role?: string | null;
+  role_display_name?: string | null;
   permissions: string[];
   companies: Array<{ id: number; name: string }>;
   active_company_id: number | null;

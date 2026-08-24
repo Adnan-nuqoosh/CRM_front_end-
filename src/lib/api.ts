@@ -98,6 +98,8 @@ export const getJson = <T>(path: string, init?: RequestInit) =>
   request<T>({ path, method: "GET", init });
 export const postJson = <T, B extends Record<string, unknown>>(path: string, body: B, init?: RequestInit) =>
   request<T>({ path, method: "POST", body, init });
+export const postForm = <T>(path: string, body: FormData, init?: RequestInit) =>
+  request<T>({ path, method: "POST", body, init });
 export const putJson = <T, B extends Record<string, unknown>>(path: string, body: B, init?: RequestInit) =>
   request<T>({ path, method: "PUT", body, init });
 export const patchJson = <T, B extends Record<string, unknown>>(path: string, body: B, init?: RequestInit) =>
